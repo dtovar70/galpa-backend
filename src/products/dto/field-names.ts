@@ -1,0 +1,30 @@
+import { feminine, masculine } from '../../common/validation/messages.js'
+
+/** Spanish names of the product fields, used to build validation messages. */
+export const FIELD = {
+    slug: masculine('El slug'),
+    name: masculine('El nombre'),
+    category: feminine('La categoría'),
+    price: masculine('El precio'),
+    compareAtPrice: masculine('El precio anterior'),
+    printText: masculine('El texto de impresión'),
+    color: masculine('El color'),
+    description: feminine('La descripción'),
+    highlights: feminine('La lista de destacados'),
+    tags: feminine('La lista de etiquetas'),
+    rating: feminine('La valoración'),
+    reviewCount: feminine('La cantidad de reseñas'),
+    stock: masculine('El stock'),
+    isActive: masculine('El estado activo'),
+    variants: feminine('La lista de variantes'),
+    variantLabel: feminine('La etiqueta de la variante'),
+    variantPriceDelta: feminine('La diferencia de precio de la variante'),
+    variantColor: masculine('El color de la variante'),
+    search: feminine('La búsqueda'),
+    sort: masculine('El orden'),
+    minPrice: masculine('El precio mínimo'),
+    maxPrice: masculine('El precio máximo'),
+    page: feminine('La página'),
+    pageSize: masculine('El tamaño de página'),
+    limit: masculine('El límite'),
+} as const
