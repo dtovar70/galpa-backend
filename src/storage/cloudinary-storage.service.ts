@@ -1,5 +1,12 @@
 import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary'
-import type { StorageService, StoredFile, UploadableImage } from './storage.service.js'
+import type {
+    PrivateFileAccess,
+    PrivateFolder,
+    StorageService,
+    StoredFile,
+    StoredPrivateFile,
+    UploadableImage,
+} from './storage.service.js'
 
 export interface CloudinaryCredentials {
     cloudName: string
@@ -8,6 +15,36 @@ export interface CloudinaryCredentials {
 }
 
 const FOLDER = 'manada-russo/products'
+const PRIVATE_ROOT = 'manada-russo/private'
+/** Lifetime of the signed URL an admin is redirected to when opening a private file. */
+const PRIVATE_URL_TTL_SECONDS = 5 * 60
+/** `<folder>/<public_id>.<format>`, as built by `uploadPrivate`. */
+const PRIVATE_KEY = /^manada-russo\/private\/payment-proofs\/[A-Za-z0-9_-]+\.(jpg|png|webp)$/
+
+function uploadBuffer(
+    buffer: Buffer,
+    options: Record<string, unknown>,
+): Promise<UploadApiResponse> {
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            options,
+            (error, result?: UploadApiResponse) => {
+                if (error || !result) {
+                    reject(new Error(error?.message ?? 'Cloudinary upload failed'))
+                    return
+                }
+                resolve(result)
+            },
+        )
+        stream.end(buffer)
+    })
+}
+
+/** "folder/abc.jpg" -> { publicId: "folder/abc", format: "jpg" } */
+function splitKey(key: string): { publicId: string; format: string } {
+    const dot = key.lastIndexOf('.')
+    return { publicId: key.slice(0, dot), format: key.slice(dot + 1) }
+}
 
 export class CloudinaryStorageService implements StorageService {
     readonly driver = 'cloudinary' as const
@@ -21,23 +58,47 @@ export class CloudinaryStorageService implements StorageService {
         })
     }
 
-    upload(image: UploadableImage): Promise<StoredFile> {
-        return new Promise((resolve, reject) => {
-            const stream = cloudinary.uploader.upload_stream(
-                { folder: FOLDER, resource_type: 'image' },
-                (error, result?: UploadApiResponse) => {
-                    if (error || !result) {
-                        reject(new Error(error?.message ?? 'Cloudinary upload failed'))
-                        return
-                    }
-                    resolve({ url: result.secure_url, publicId: result.public_id })
-                },
-            )
-            stream.end(image.buffer)
-        })
+    async upload(image: UploadableImage): Promise<StoredFile> {
+        const result = await uploadBuffer(image.buffer, { folder: FOLDER, resource_type: 'image' })
+        return { url: result.secure_url, publicId: result.public_id }
     }
 
     async delete(publicId: string): Promise<void> {
         await cloudinary.uploader.destroy(publicId, { resource_type: 'image', invalidate: true })
+    }
+
+    /**
+     * `type: 'authenticated'` assets cannot be fetched by their plain delivery URL; they are
+     * only reachable through URLs signed with the API secret.
+     */
+    async uploadPrivate(image: UploadableImage, folder: PrivateFolder): Promise<StoredPrivateFile> {
+        const result = await uploadBuffer(image.buffer, {
+            folder: `${PRIVATE_ROOT}/${folder}`,
+            resource_type: 'image',
+            type: 'authenticated',
+        })
+        return { key: `${result.public_id}.${result.format}` }
+    }
+
+    readPrivate(key: string): Promise<PrivateFileAccess | null> {
+        if (!PRIVATE_KEY.test(key)) return Promise.resolve(null)
+        const { publicId, format } = splitKey(key)
+        // A download URL signed for a few minutes: it stops working soon after the admin looks.
+        const url = cloudinary.utils.private_download_url(publicId, format, {
+            resource_type: 'image',
+            type: 'authenticated',
+            expires_at: Math.floor(Date.now() / 1000) + PRIVATE_URL_TTL_SECONDS,
+        })
+        return Promise.resolve({ kind: 'redirect', url })
+    }
+
+    async deletePrivate(key: string): Promise<void> {
+        if (!PRIVATE_KEY.test(key)) return
+        const { publicId } = splitKey(key)
+        await cloudinary.uploader.destroy(publicId, {
+            resource_type: 'image',
+            type: 'authenticated',
+            invalidate: true,
+        })
     }
 }

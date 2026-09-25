@@ -8,9 +8,11 @@ export const CONTENT_LIMITS = {
     title: 90,
     /** Titles of list items (steps, values). */
     itemTitle: 60,
-    question: 120,
-    /** Subtitles and descriptions. */
+    question: 100,
+    /** Subtitles and descriptions edited in a textarea. */
     text: 300,
+    /** Descriptions edited in a single-line field (every one-line field stops at 100). */
+    shortText: 100,
     /** Paragraphs and FAQ answers. */
     paragraph: 1000,
     brandName: 60,
@@ -20,10 +22,11 @@ export const CONTENT_LIMITS = {
     announcement: 80,
     searchPlaceholder: 60,
     statValue: 12,
-    email: 120,
+    email: 100,
     city: 80,
-    schedule: 120,
-    bankName: 60,
+    schedule: 100,
+    // Same limit as `banks.name`: the name is copied from the banks catalog.
+    bankName: 100,
     holderName: 80,
     instructions: 500,
 } as const

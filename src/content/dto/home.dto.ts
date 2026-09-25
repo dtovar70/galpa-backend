@@ -70,7 +70,7 @@ export class HomeContentDto implements HomeContent {
     @ContentText(title('los pasos'), { max: MAX.title, highlights: true })
     stepsTitle: string
 
-    @ContentText(description('los pasos'), { max: MAX.text, optional: true })
+    @ContentText(description('los pasos'), { max: MAX.shortText, optional: true })
     stepsDescription: string
 
     @ContentList(feminine('La lista de pasos'), CONTENT_LIST_SIZES.steps)
@@ -102,6 +102,6 @@ export class HomeContentDto implements HomeContent {
     @ContentText(title('el boletín'), { max: MAX.title })
     newsletterTitle: string
 
-    @ContentText(description('el boletín'), { max: MAX.text })
+    @ContentText(description('el boletín'), { max: MAX.shortText })
     newsletterDescription: string
 }

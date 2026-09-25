@@ -18,3 +18,5 @@ uploads/
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+private-uploads/

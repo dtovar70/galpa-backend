@@ -1,0 +1,49 @@
+import { Module } from '@nestjs/common'
+import { TypeOrmModule } from '@nestjs/typeorm'
+import { CatalogsModule } from '../catalogs/catalogs.module.js'
+import { ContentModule } from '../content/content.module.js'
+import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module.js'
+import { AdminOrdersController } from './admin-orders.controller.js'
+import { AdminOrdersService } from './admin-orders.service.js'
+import { OrderAccessLink } from './entities/order-access-link.entity.js'
+import { OrderItem } from './entities/order-item.entity.js'
+import { OrderNote } from './entities/order-note.entity.js'
+import { OrderPayment } from './entities/order-payment.entity.js'
+import { OrderStatusHistory } from './entities/order-status-history.entity.js'
+import { Order } from './entities/order.entity.js'
+import { OrderAccessService } from './order-access.service.js'
+import { OrderExpiryService } from './order-expiry.service.js'
+import { OrderStatusService } from './order-status.service.js'
+import { OrdersController } from './orders.controller.js'
+import { OrdersService } from './orders.service.js'
+import { ReceiptService } from './receipt/receipt.service.js'
+import { OrderWhatsAppService } from './whatsapp/order-whatsapp.service.js'
+
+@Module({
+    imports: [
+        TypeOrmModule.forFeature([
+            Order,
+            OrderItem,
+            OrderPayment,
+            OrderStatusHistory,
+            OrderNote,
+            OrderAccessLink,
+        ]),
+        CatalogsModule,
+        ContentModule,
+        ExchangeRateModule,
+    ],
+    controllers: [OrdersController, AdminOrdersController],
+    providers: [
+        OrdersService,
+        AdminOrdersService,
+        OrderStatusService,
+        OrderExpiryService,
+        OrderAccessService,
+        ReceiptService,
+        OrderWhatsAppService,
+    ],
+    // The Telegram bot (Phase 4) will call OrderStatusService.transition() like the admin API.
+    exports: [OrderStatusService],
+})
+export class OrdersModule {}

@@ -122,8 +122,8 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     },
     contact: {
         email: 'hola@manadarusso.com',
-        phone: '0412-5550134',
-        whatsapp: '0412-5550134',
+        phone: '0414-5086536',
+        whatsapp: '0414-5086536',
         city: 'Quíbor, estado Lara',
         schedule: 'Lunes a viernes, 9:00 a.m. – 6:00 p.m.',
         instagram: 'manadarussocreativa',

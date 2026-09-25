@@ -4,6 +4,7 @@ import { getDataSourceToken } from '@nestjs/typeorm'
 import request from 'supertest'
 import { AppModule } from '../src/app.module.js'
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js'
+import { catalogRepository } from './fixtures/catalogs.js'
 
 /**
  * Boots the full application module with the TypeORM DataSource replaced by a stub, so the
@@ -14,7 +15,8 @@ const dataSourceStub = {
     entityMetadatas: [],
     options: { type: 'postgres' },
     manager: {},
-    getRepository: () => ({ findOneBy: () => Promise.resolve(null) }),
+    getRepository: (entity: unknown) =>
+        catalogRepository(entity) ?? { findOneBy: () => Promise.resolve(null) },
 }
 
 describe('App (e2e)', () => {

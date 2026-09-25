@@ -1,5 +1,11 @@
 import { z } from 'zod'
 
+/** "true"/"false" (and 1/0, yes/no) from the environment; unset or empty stays undefined. */
+const optionalBoolean = z
+    .enum(['true', 'false', '1', '0', 'yes', 'no', ''])
+    .optional()
+    .transform((value) => (value ? ['true', '1', 'yes'].includes(value) : undefined))
+
 const optionalString = z
     .string()
     .trim()
@@ -16,6 +22,14 @@ export const envSchema = z.object({
     PUBLIC_API_URL: z
         .url()
         .default('http://localhost:3000')
+        .transform((value) => value.replace(/\/+$/, '')),
+    /**
+     * Public address of the storefront, used to build the customer's order links
+     * (`<PUBLIC_SITE_URL>/pedido/MR-000123?t=…`) the admin sends by WhatsApp.
+     */
+    PUBLIC_SITE_URL: z
+        .url()
+        .default('http://localhost:5173')
         .transform((value) => value.replace(/\/+$/, '')),
     CORS_ORIGIN: z
         .string()
@@ -35,6 +49,19 @@ export const envSchema = z.object({
     CLOUDINARY_CLOUD_NAME: optionalString,
     CLOUDINARY_API_KEY: optionalString,
     CLOUDINARY_API_SECRET: optionalString,
+    /** Hours a new order waits for its payment before it expires (fractions allowed). */
+    ORDER_PAYMENT_WINDOW_HOURS: z.coerce.number().positive().max(720).default(24),
+    /** How often unpaid orders past their deadline are expired. */
+    ORDER_EXPIRY_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(10),
+    /** A BCV rate whose "fecha valor" is older than this cannot be used for checkout. */
+    EXCHANGE_RATE_MAX_AGE_HOURS: z.coerce.number().positive().max(720).default(72),
+    /** How often the BCV rate is fetched (it is also fetched at startup). */
+    EXCHANGE_RATE_SYNC_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(120),
+    /**
+     * Background jobs (rate sync, order expiry). Default: on, except under NODE_ENV=test so the
+     * test suites never reach the network or the scheduler.
+     */
+    SCHEDULED_JOBS_ENABLED: optionalBoolean,
 })
 
 export type Env = z.infer<typeof envSchema>

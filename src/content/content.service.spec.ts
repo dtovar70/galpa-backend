@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common'
 import type { Repository } from 'typeorm'
 import { Role } from '../auth/role.enum.js'
+import type { BanksService } from '../catalogs/banks.service.js'
 import type { AuthUser } from '../common/types/auth-user.js'
 import { DEFAULT_SITE_CONTENT } from './content.defaults.js'
 import { ContentService, mergeSection } from './content.service.js'
@@ -23,8 +24,21 @@ function setup(rows: Partial<SiteContentEntry>[] = []) {
         query: vi.fn().mockResolvedValue([]),
         delete: vi.fn().mockResolvedValue({ affected: 1 }),
     }
-    const service = new ContentService(entries as unknown as Repository<SiteContentEntry>)
-    return { service, entries }
+    /** The `banks` catalog: 0102 is active, 0104 exists but was deactivated. */
+    const banks = {
+        findActive: vi.fn((code: string) =>
+            Promise.resolve(
+                code === '0102'
+                    ? { code, name: 'Banco de Venezuela', isActive: true, sortOrder: 0 }
+                    : null,
+            ),
+        ),
+    }
+    const service = new ContentService(
+        entries as unknown as Repository<SiteContentEntry>,
+        banks as unknown as BanksService,
+    )
+    return { service, entries, banks }
 }
 
 /** The validation error details of a rejected update. */
@@ -163,6 +177,31 @@ describe('ContentService', () => {
         await expect(
             service.update('payment', { ...payment, idNumber: 'V-12345678' }, USER),
         ).resolves.toBeDefined()
+    })
+
+    it('takes the Pago Móvil bank from the active banks of the catalog', async () => {
+        const { service, entries, banks } = setup()
+        const payment = {
+            bankCode: '0102',
+            bankName: 'Otro nombre',
+            phone: '0412-5550134',
+            idNumber: 'V-12345678',
+            holderName: 'Manada Russo',
+            instructions: '',
+        }
+        await service.update('payment', payment, USER)
+        const [, params] = entries.query.mock.calls[0] as [string, unknown[]]
+        expect(JSON.parse(params[1] as string)).toMatchObject({
+            bankCode: '0102',
+            bankName: 'Banco de Venezuela',
+        })
+
+        entries.query.mockClear()
+        expect(
+            await detailsOf(service.update('payment', { ...payment, bankCode: '0104' }, USER)),
+        ).toEqual([{ field: 'bankCode', errors: ['Elige un banco de la lista.'] }])
+        expect(banks.findActive).toHaveBeenLastCalledWith('0104')
+        expect(entries.query).not.toHaveBeenCalled()
     })
 
     it('checks list sizes and names the offending item', async () => {

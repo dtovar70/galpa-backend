@@ -12,6 +12,11 @@ export const MAX_FEATURED_LIMIT = 24
 export const RELATED_LIMIT = 4
 export const MAX_RELATED_LIMIT = 12
 
+/** Multi-line description (a textarea); enforced by the DTO and a CHECK on the column. */
+export const PRODUCT_DESCRIPTION_MAX_LENGTH = 4000
+/** "Detalles destacados": at most this many, each a single-line text. */
+export const PRODUCT_MAX_HIGHLIGHTS = 6
+
 export const MAX_IMAGES_PER_UPLOAD = 8
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 

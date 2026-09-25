@@ -19,7 +19,13 @@ import {
 } from 'class-validator'
 import { HEX_COLOR_PATTERN, SLUG_PATTERN } from '../../common/utils/text.util.js'
 import { msg } from '../../common/validation/messages.js'
-import { PRODUCT_TAGS, type ProductTag } from '../products.constants.js'
+import { MaxInputLength, TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
+import {
+    PRODUCT_DESCRIPTION_MAX_LENGTH,
+    PRODUCT_MAX_HIGHLIGHTS,
+    PRODUCT_TAGS,
+    type ProductTag,
+} from '../products.constants.js'
 import { FIELD } from './field-names.js'
 
 const MAX_PRICE = 99_999_999.99
@@ -36,6 +42,7 @@ export class ProductVariantInputDto {
     priceDelta: number
 
     @IsOptional()
+    @MaxInputLength(FIELD.variantColor)
     @Matches(HEX_COLOR_PATTERN, { message: msg.hexColor(FIELD.variantColor) })
     colorHex?: string
 }
@@ -49,7 +56,7 @@ export class CreateProductDto {
 
     @IsString({ message: msg.text(FIELD.name) })
     @IsNotEmpty({ message: msg.required(FIELD.name) })
-    @MaxLength(120, { message: msg.maxLength(FIELD.name, 120) })
+    @MaxInputLength(FIELD.name)
     name: string
 
     @Matches(SLUG_PATTERN, { message: msg.invalid(FIELD.category) })
@@ -72,20 +79,25 @@ export class CreateProductDto {
     @MaxLength(80, { message: msg.maxLength(FIELD.printText, 80) })
     printText: string
 
+    @MaxInputLength(FIELD.color)
     @Matches(HEX_COLOR_PATTERN, { message: msg.hexColor(FIELD.color) })
     colorHex: string
 
     @IsString({ message: msg.text(FIELD.description) })
-    @MaxLength(4000, { message: msg.maxLength(FIELD.description, 4000) })
+    @MaxLength(PRODUCT_DESCRIPTION_MAX_LENGTH, {
+        message: msg.maxLength(FIELD.description, PRODUCT_DESCRIPTION_MAX_LENGTH),
+    })
     description: string
 
     @IsOptional()
     @IsArray({ message: msg.list(FIELD.highlights) })
-    @ArrayMaxSize(12, { message: msg.listMaxSize(FIELD.highlights, 12) })
+    @ArrayMaxSize(PRODUCT_MAX_HIGHLIGHTS, {
+        message: msg.listMaxSize(FIELD.highlights, PRODUCT_MAX_HIGHLIGHTS),
+    })
     @IsString({ each: true, message: 'Cada destacado debe ser un texto.' })
-    @MaxLength(200, {
+    @MaxLength(TEXT_INPUT_MAX_LENGTH, {
         each: true,
-        message: 'Cada destacado no puede superar los 200 caracteres.',
+        message: `Cada destacado no puede superar los ${TEXT_INPUT_MAX_LENGTH} caracteres.`,
     })
     highlights?: string[]
 

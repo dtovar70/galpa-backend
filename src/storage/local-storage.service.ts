@@ -1,22 +1,47 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, unlink, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { mkdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Logger } from '@nestjs/common'
 import { IMAGE_EXTENSIONS } from './image-type.js'
-import type { StorageService, StoredFile, UploadableImage } from './storage.service.js'
+import type {
+    PrivateFileAccess,
+    PrivateFolder,
+    StorageService,
+    StoredFile,
+    StoredPrivateFile,
+    UploadableImage,
+} from './storage.service.js'
 
 /** Root folder for local uploads, served statically at `/uploads` (see main.ts). */
 export const LOCAL_UPLOADS_DIR = join(process.cwd(), 'uploads')
 
+/**
+ * Root folder for private files. Deliberately a sibling of `uploads/`, never inside it, so no
+ * static route can ever serve it; files are only streamed by authenticated API routes.
+ */
+export const LOCAL_PRIVATE_UPLOADS_DIR = join(process.cwd(), 'private-uploads')
+
 const PRODUCTS_SUBDIR = 'products'
 const SAFE_PUBLIC_ID = /^products\/[a-f0-9-]{36}\.(jpg|png|webp)$/
+/** Keys this service creates for private files; anything else is refused (path traversal). */
+const SAFE_PRIVATE_KEY = /^payment-proofs\/[a-f0-9-]{36}\.(jpg|png|webp)$/
+
+const CONTENT_TYPES: Record<string, string> = {
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+}
 
 /** Development fallback used when Cloudinary is not configured. */
 export class LocalStorageService implements StorageService {
     readonly driver = 'local' as const
     private readonly logger = new Logger(LocalStorageService.name)
 
-    constructor(private readonly publicApiUrl: string) {}
+    constructor(
+        private readonly publicApiUrl: string,
+        private readonly privateDir: string = LOCAL_PRIVATE_UPLOADS_DIR,
+    ) {}
 
     async upload(image: UploadableImage): Promise<StoredFile> {
         const directory = join(LOCAL_UPLOADS_DIR, PRODUCTS_SUBDIR)
@@ -37,6 +62,45 @@ export class LocalStorageService implements StorageService {
         }
         try {
             await unlink(join(LOCAL_UPLOADS_DIR, publicId))
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+    }
+
+    async uploadPrivate(image: UploadableImage, folder: PrivateFolder): Promise<StoredPrivateFile> {
+        const directory = join(this.privateDir, folder)
+        await mkdir(directory, { recursive: true, mode: 0o700 })
+
+        const fileName = `${randomUUID()}.${IMAGE_EXTENSIONS[image.type]}`
+        await writeFile(join(directory, fileName), image.buffer, { mode: 0o600 })
+        return { key: `${folder}/${fileName}` }
+    }
+
+    async readPrivate(key: string): Promise<PrivateFileAccess | null> {
+        if (!SAFE_PRIVATE_KEY.test(key)) return null
+        const path = join(this.privateDir, key)
+        try {
+            const info = await stat(path)
+            const extension = key.slice(key.lastIndexOf('.') + 1)
+            return {
+                kind: 'stream',
+                stream: createReadStream(path),
+                contentType: CONTENT_TYPES[extension] ?? 'application/octet-stream',
+                size: info.size,
+            }
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+            throw error
+        }
+    }
+
+    async deletePrivate(key: string): Promise<void> {
+        if (!SAFE_PRIVATE_KEY.test(key)) {
+            this.logger.warn(`Refusing to delete unexpected private file key "${key}"`)
+            return
+        }
+        try {
+            await unlink(join(this.privateDir, key))
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         }

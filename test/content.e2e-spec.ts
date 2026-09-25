@@ -10,6 +10,7 @@ import { User } from '../src/auth/entities/user.entity.js'
 import { Role } from '../src/auth/role.enum.js'
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js'
 import { DEFAULT_SITE_CONTENT } from '../src/content/content.defaults.js'
+import { catalogRepository } from './fixtures/catalogs.js'
 
 const USERS = {
     admin: { id: 'admin-1', role: Role.ADMIN },
@@ -45,7 +46,7 @@ const dataSourceStub = {
     getRepository: (entity: unknown) =>
         entity === User
             ? { findOneBy: ({ id }: { id: string }) => Promise.resolve(userRow(id)) }
-            : contentRepository,
+            : (catalogRepository(entity) ?? contentRepository),
 }
 
 /**

@@ -8,6 +8,7 @@ import {
     PrimaryColumn,
     type Relation,
 } from 'typeorm'
+import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
 import { Product } from './product.entity.js'
 
 @Entity({ name: 'product_images' })
@@ -33,7 +34,8 @@ export class ProductImage {
     @Column({ name: 'public_id', type: 'text' })
     publicId: string
 
-    @Column({ type: 'text', nullable: true })
+    /** The product name when uploaded. */
+    @Column({ type: 'varchar', length: TEXT_INPUT_MAX_LENGTH, nullable: true })
     alt: string | null
 
     @Column({ name: 'sort_order', type: 'integer', default: 0 })

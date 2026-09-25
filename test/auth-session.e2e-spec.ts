@@ -8,6 +8,7 @@ import request from 'supertest'
 import { AppModule } from '../src/app.module.js'
 import { Role } from '../src/auth/role.enum.js'
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js'
+import { catalogRepository } from './fixtures/catalogs.js'
 
 const USER = {
     id: 'user-1',
@@ -18,15 +19,16 @@ const USER = {
     updatedAt: new Date('2026-01-01T00:00:00Z'),
 }
 
-/** Repository stub: only USER exists. */
+/** Repository stub: only USER exists (plus the seeded catalogs the startup check reads). */
 const dataSourceStub = {
     isInitialized: false,
     entityMetadatas: [],
     options: { type: 'postgres' },
     manager: {},
-    getRepository: () => ({
-        findOneBy: ({ id }: { id: string }) => Promise.resolve(id === USER.id ? USER : null),
-    }),
+    getRepository: (entity: unknown) =>
+        catalogRepository(entity) ?? {
+            findOneBy: ({ id }: { id: string }) => Promise.resolve(id === USER.id ? USER : null),
+        },
 }
 
 interface SessionBody {

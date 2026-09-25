@@ -198,3 +198,14 @@ export interface SiteContent {
     shipping: ShippingContent
     payment: PaymentContent
 }
+
+/** Checkout needs every Pago Móvil detail (instructions are optional). */
+export function isPaymentConfigured(payment: PaymentContent): boolean {
+    return [
+        payment.bankCode,
+        payment.bankName,
+        payment.phone,
+        payment.idNumber,
+        payment.holderName,
+    ].every((value) => value.trim() !== '')
+}

@@ -1,4 +1,5 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryColumn, type Relation } from 'typeorm'
+import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
 import { Product } from './product.entity.js'
 
@@ -21,7 +22,7 @@ export class ProductVariant {
     })
     product: Relation<Product>
 
-    @Column({ type: 'text' })
+    @Column({ type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     label: string
 
     @Column({
@@ -34,7 +35,7 @@ export class ProductVariant {
     })
     priceDelta: number
 
-    @Column({ name: 'color_hex', type: 'text', nullable: true })
+    @Column({ name: 'color_hex', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH, nullable: true })
     colorHex: string | null
 
     @Column({ name: 'sort_order', type: 'integer', default: 0 })

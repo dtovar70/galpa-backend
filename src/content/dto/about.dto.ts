@@ -56,7 +56,10 @@ export class AboutContentDto implements AboutContent {
     @ContentText(masculine('El título de los valores'), { max: MAX.title, highlights: true })
     valuesTitle: string
 
-    @ContentText(feminine('La descripción de los valores'), { max: MAX.text, optional: true })
+    @ContentText(feminine('La descripción de los valores'), {
+        max: MAX.shortText,
+        optional: true,
+    })
     valuesDescription: string
 
     @ContentList(feminine('La lista de valores'), CONTENT_LIST_SIZES.values)

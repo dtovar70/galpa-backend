@@ -1,6 +1,12 @@
-import { Injectable, NotFoundException, type ValidationPipe } from '@nestjs/common'
+import {
+    BadRequestException,
+    Injectable,
+    NotFoundException,
+    type ValidationPipe,
+} from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
+import { BanksService } from '../catalogs/banks.service.js'
 import { createValidationPipe } from '../common/pipes/validation.pipe.js'
 import type { AuthUser } from '../common/types/auth-user.js'
 import { DEFAULT_SITE_CONTENT } from './content.defaults.js'
@@ -8,6 +14,7 @@ import {
     CONTENT_SECTIONS,
     isContentSection,
     type ContentSection,
+    type PaymentContent,
     type SiteContent,
 } from './content.types.js'
 import { CONTENT_SECTION_DTOS } from './dto/index.js'
@@ -66,6 +73,7 @@ export class ContentService {
     constructor(
         @InjectRepository(SiteContentEntry)
         private readonly entries: Repository<SiteContentEntry>,
+        private readonly banks: BanksService,
     ) {}
 
     /** Every section, stored values merged over the defaults. */
@@ -98,6 +106,7 @@ export class ContentService {
             type: 'body',
             metatype: CONTENT_SECTION_DTOS[key],
         })
+        if (key === 'payment') await this.checkPaymentBank(dto as PaymentContent)
 
         // One atomic upsert: two admins saving at once can never collide on the primary key.
         await this.entries.query(
@@ -119,6 +128,23 @@ export class ContentService {
         const key = this.assertSection(section)
         await this.entries.delete({ key })
         return toAdminSection(key, undefined)
+    }
+
+    /**
+     * The Pago Móvil bank must be an active bank of the `banks` catalog; its name is taken from
+     * the catalog, so the details the customer copies always match the bank list.
+     */
+    private async checkPaymentBank(payment: PaymentContent): Promise<void> {
+        const bank = await this.banks.findActive(payment.bankCode)
+        if (!bank) {
+            throw new BadRequestException({
+                statusCode: 400,
+                error: 'Bad Request',
+                message: 'Los datos enviados no son válidos. Revisa los campos marcados.',
+                details: [{ field: 'bankCode', errors: ['Elige un banco de la lista.'] }],
+            })
+        }
+        payment.bankName = bank.name
     }
 
     private assertSection(section: string): ContentSection {

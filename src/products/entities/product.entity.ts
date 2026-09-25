@@ -1,4 +1,5 @@
 import {
+    Check,
     Column,
     CreateDateColumn,
     Entity,
@@ -10,6 +11,8 @@ import {
     UpdateDateColumn,
     type Relation,
 } from 'typeorm'
+import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
+import { PRODUCT_DESCRIPTION_MAX_LENGTH, PRODUCT_MAX_HIGHLIGHTS } from '../products.constants.js'
 import { Category } from '../../categories/entities/category.entity.js'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
 import { ProductImage } from './product-image.entity.js'
@@ -19,17 +22,27 @@ import { ProductVariant } from './product-variant.entity.js'
 @Index('products_slug_key', ['slug'], { unique: true })
 @Index('products_category_slug_idx', ['categorySlug'])
 @Index('products_is_active_relevance_score_idx', ['isActive', 'relevanceScore'])
+@Check(
+    'products_description_length_check',
+    `char_length("description") <= ${PRODUCT_DESCRIPTION_MAX_LENGTH}`,
+)
+@Check('products_highlights_count_check', `cardinality("highlights") <= ${PRODUCT_MAX_HIGHLIGHTS}`)
+/** `max_text_array_item_length(text[])` is created by the TextLengthLimits migration. */
+@Check(
+    'products_highlights_length_check',
+    `max_text_array_item_length("highlights") <= ${TEXT_INPUT_MAX_LENGTH}`,
+)
 export class Product {
     @PrimaryColumn({ type: 'text', primaryKeyConstraintName: 'products_pkey' })
     id: string
 
-    @Column({ type: 'text' })
+    @Column({ type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     slug: string
 
-    @Column({ type: 'text' })
+    @Column({ type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     name: string
 
-    @Column({ name: 'category_slug', type: 'text' })
+    @Column({ name: 'category_slug', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     categorySlug: string
 
     @ManyToOne(() => Category, (category) => category.products, {
@@ -56,10 +69,10 @@ export class Product {
     })
     compareAtPrice: number | null
 
-    @Column({ name: 'print_text', type: 'text' })
+    @Column({ name: 'print_text', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     printText: string
 
-    @Column({ name: 'color_hex', type: 'text' })
+    @Column({ name: 'color_hex', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     colorHex: string
 
     @Column({ type: 'text' })

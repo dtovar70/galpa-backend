@@ -10,6 +10,7 @@ import {
 } from 'class-validator'
 import { HEX_COLOR_PATTERN, SLUG_PATTERN } from '../../common/utils/text.util.js'
 import { msg } from '../../common/validation/messages.js'
+import { MaxInputLength } from '../../common/validation/text-limits.js'
 import {
     CATEGORY_DESCRIPTION_MAX_LENGTH,
     CATEGORY_FIELD as FIELD,
@@ -49,6 +50,7 @@ export class CreateCategoryDto {
     })
     description?: string
 
+    @MaxInputLength(FIELD.color)
     @Matches(HEX_COLOR_PATTERN, { message: msg.hexColor(FIELD.color) })
     colorHex: string
 
