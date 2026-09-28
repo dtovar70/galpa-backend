@@ -43,7 +43,8 @@ import { OrderWhatsAppService } from './whatsapp/order-whatsapp.service.js'
         ReceiptService,
         OrderWhatsAppService,
     ],
-    // The Telegram bot (Phase 4) will call OrderStatusService.transition() like the admin API.
-    exports: [OrderStatusService],
+    // The Telegram bot (Phase 4) calls OrderStatusService.transition() like the admin API, reads
+    // payment proofs through AdminOrdersService and builds WhatsApp reminders.
+    exports: [OrderStatusService, AdminOrdersService, OrderWhatsAppService],
 })
 export class OrdersModule {}

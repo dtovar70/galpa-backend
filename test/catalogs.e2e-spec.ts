@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module.js'
 import { User } from '../src/auth/entities/user.entity.js'
 import { Role } from '../src/auth/role.enum.js'
 import { Bank } from '../src/catalogs/entities/bank.entity.js'
+import { MobilePrefix } from '../src/catalogs/entities/mobile-prefix.entity.js'
 import { OrderStatusDefinition } from '../src/catalogs/entities/order-status-definition.entity.js'
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js'
 import { catalogRows } from './fixtures/catalogs.js'
@@ -32,6 +33,9 @@ class CatalogDb {
     tables = new Map<unknown, Row[]>()
     paymentsByBank = new Map<string, number>()
     paymentContentBank: string | null = null
+    /** Orders in progress per mobile operator code, and the stored content sections. */
+    activeOrdersByPrefix = new Map<string, number>()
+    contentRows: { key: string; value: Row }[] = []
 
     constructor(private readonly dropStatus?: string) {}
 
@@ -55,12 +59,23 @@ class CatalogDb {
     }
 
     private query(sql: string, params: unknown[] = []) {
+        if (sql.includes('WITH "phones"')) {
+            return Promise.resolve(
+                [...this.activeOrdersByPrefix].map(([code, count]) => ({
+                    code,
+                    count: String(count),
+                })),
+            )
+        }
         if (sql.includes('FROM "order_payments"')) {
             return Promise.resolve(
                 [...this.paymentsByBank]
                     .filter(([code]) => !params.length || code === params[0])
                     .map(([code, count]) => ({ code, count: String(count) })),
             )
+        }
+        if (sql.includes('SELECT "key", "value" FROM "site_content"')) {
+            return Promise.resolve(this.contentRows)
         }
         if (sql.includes('FROM "site_content"')) {
             return Promise.resolve(
@@ -86,6 +101,8 @@ class CatalogDb {
                                   ...user,
                                   email: `${user.id}@example.com`,
                                   name: 'Staff',
+                                  isActive: true,
+                                  passwordChangedAt: null,
                                   createdAt: new Date(),
                                   updatedAt: new Date(),
                               }
@@ -385,5 +402,102 @@ describe('Catalogs (e2e)', () => {
             .get('/api/admin/catalogs/banks')
             .set('Cookie', cookie('editor'))
             .expect(403)
+    })
+
+    it('GET /api/catalogs/mobile-prefixes lists the active codes in order, with an ETag', async () => {
+        const response = await request(app.getHttpServer())
+            .get('/api/catalogs/mobile-prefixes')
+            .expect(200)
+            .expect('Cache-Control', 'no-cache')
+        expect(response.headers.etag).toBeTruthy()
+        // 0426 is seeded inactive.
+        expect(response.body).toEqual(
+            ['0412', '0414', '0416', '0422', '0424'].map((code) => ({ code })),
+        )
+    })
+
+    it('manages the mobile codes: add, deactivate, reorder; deletes only unused ones', async () => {
+        const admin = (method: 'get' | 'post' | 'patch' | 'delete', path: string) =>
+            request(app.getHttpServer())
+                [method](`/api/admin/catalogs/mobile-prefixes${path}`)
+                .set('Cookie', cookie('admin'))
+        const publicCodes = async () =>
+            (
+                (await request(app.getHttpServer()).get('/api/catalogs/mobile-prefixes'))
+                    .body as Row[]
+            ).map((row) => row.code)
+
+        await request(app.getHttpServer()).get('/api/admin/catalogs/mobile-prefixes').expect(401)
+        await request(app.getHttpServer())
+            .post('/api/admin/catalogs/mobile-prefixes')
+            .set('Cookie', cookie('editor'))
+            .send({ code: '0418' })
+            .expect(403)
+
+        db.activeOrdersByPrefix.set('0412', 2)
+        db.contentRows = [{ key: 'payment', value: { phone: '0424-1234567' } }]
+        const list = await admin('get', '').expect(200).expect('Cache-Control', 'no-store')
+        expect(list.body[0]).toEqual({
+            code: '0412',
+            isActive: true,
+            sortOrder: 0,
+            activeOrderCount: 2,
+            contentFields: [],
+        })
+        // Nothing stored for "contact": its default WhatsApp (0414-…) counts.
+        expect((list.body as Row[]).find((row) => row.code === '0414')).toMatchObject({
+            contentFields: ['contact.whatsapp'],
+        })
+        expect((list.body as Row[]).find((row) => row.code === '0424')).toMatchObject({
+            contentFields: ['payment.phone'],
+        })
+
+        const created = await admin('post', '').send({ code: ' 0418 ', isActive: false })
+        expect(created.status).toBe(201)
+        expect(created.body).toMatchObject({ code: '0418', isActive: false, sortOrder: 6 })
+        await admin('post', '').send({ code: '0412' }).expect(409)
+        for (const code of ['0212', '412', '04a1']) {
+            const bad = await admin('post', '').send({ code }).expect(400)
+            expect(bad.body.details).toEqual([
+                {
+                    field: 'code',
+                    errors: [
+                        'El código de celular debe tener el formato 0424 (4 dígitos que empiezan por 04).',
+                    ],
+                },
+            ])
+        }
+
+        await admin('patch', '/0416').send({ isActive: false }).expect(200)
+        await admin('patch', '/0426').send({ isActive: true }).expect(200)
+        await admin('patch', '/0416').send({ code: '0417', isActive: true }).expect(400)
+        await admin('patch', '/0499').send({ isActive: true }).expect(404)
+        expect(await publicCodes()).toEqual(['0412', '0414', '0422', '0424', '0426'])
+
+        const reordered = await admin('patch', '/order')
+            .send({ codes: ['0424', '0412', '0414', '0416', '0422', '0426', '0418'] })
+            .expect(200)
+        expect((reordered.body as Row[]).map((row) => row.code)).toEqual([
+            '0424',
+            '0412',
+            '0414',
+            '0416',
+            '0422',
+            '0426',
+            '0418',
+        ])
+        expect(await publicCodes()).toEqual(['0424', '0412', '0414', '0422', '0426'])
+        await admin('patch', '/order')
+            .send({ codes: ['0424'] })
+            .expect(400)
+
+        const inUse = await admin('delete', '/0412').expect(409)
+        expect(inUse.body.message).toBe(
+            'No puedes eliminar el código 0412 porque lo usan 2 pedidos en curso. Desactívalo para ocultarlo.',
+        )
+        await admin('delete', '/0424').expect(409)
+        await admin('delete', '/0418').expect(204)
+        await admin('delete', '/0418').expect(404)
+        expect(db.table(MobilePrefix).map((row) => row.code)).not.toContain('0418')
     })
 })

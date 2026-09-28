@@ -62,6 +62,12 @@ export const RECEIPT_STATUSES: readonly OrderStatus[] = [
 export const CLOSED_STATUSES: readonly OrderStatus[] = ['CANCELADO', 'EXPIRADO']
 
 /**
+ * Orders that are over (delivered, cancelled or expired). A mobile operator code that only these
+ * orders use can be deleted from `mobile_prefixes`.
+ */
+export const FINISHED_STATUSES: readonly OrderStatus[] = ['ENTREGADO', ...CLOSED_STATUSES]
+
+/**
  * Who moves an order. `admin` is a back-office user, `telegram` the (future) Telegram bot acting
  * for the owner, `customer` the buyer through their private link, `system` the scheduler.
  */

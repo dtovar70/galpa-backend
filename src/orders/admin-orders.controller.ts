@@ -143,7 +143,7 @@ export class AdminOrdersController {
         @Param('code') code: string,
         @CurrentUser() user: AuthUser,
     ): Promise<WhatsAppMessageDto> {
-        return this.whatsapp.prepare(code, user)
+        return this.whatsapp.prepare(code, user.id)
     }
 
     /** The owner opened WhatsApp with the message: an internal note keeps the trace. */
@@ -159,8 +159,12 @@ export class AdminOrdersController {
 
     /** The purchase receipt PDF (409 until the payment is verified, and once cancelled). */
     @Get(':code/receipt.pdf')
-    async receipt(@Param('code') code: string, @Res() res: Response): Promise<void> {
-        sendReceipt(res, await this.receipts.forAdmin(code))
+    async receipt(
+        @Param('code') code: string,
+        @CurrentUser() user: AuthUser,
+        @Res() res: Response,
+    ): Promise<void> {
+        sendReceipt(res, await this.receipts.forAdmin(code, user.id))
     }
 
     /**

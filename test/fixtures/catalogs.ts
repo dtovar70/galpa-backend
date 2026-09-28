@@ -1,4 +1,5 @@
 import { Bank } from '../../src/catalogs/entities/bank.entity.js'
+import { MobilePrefix } from '../../src/catalogs/entities/mobile-prefix.entity.js'
 import { OrderStatusDefinition } from '../../src/catalogs/entities/order-status-definition.entity.js'
 import { OrderStatusGroup } from '../../src/catalogs/entities/order-status-group.entity.js'
 import { ORDER_STATUSES } from '../../src/orders/order-status.js'
@@ -6,7 +7,8 @@ import { DEFAULT_WHATSAPP_TEMPLATES } from '../../src/orders/whatsapp/whatsapp-t
 
 /**
  * The catalog rows the migration seeds, for the suites that stub the database. Only what the
- * tests read: admin labels, groups and a few banks (0104 is inactive).
+ * tests read: admin labels, groups, a few banks (0104 is inactive) and the mobile operator codes
+ * (0426 is inactive).
  */
 const LABELS: Record<(typeof ORDER_STATUSES)[number], [label: string, group: string]> = {
     PENDIENTE_PAGO: ['Pendiente de pago', 'POR_PAGAR'],
@@ -59,11 +61,27 @@ export function bankRows(): Bank[] {
     ]
 }
 
+export function mobilePrefixRows(): MobilePrefix[] {
+    return [
+        ['0412', true],
+        ['0414', true],
+        ['0416', true],
+        ['0422', true],
+        ['0424', true],
+        ['0426', false],
+    ].map(([code, isActive], sortOrder) => ({
+        code: code as string,
+        isActive: isActive as boolean,
+        sortOrder,
+    }))
+}
+
 /** Seeded rows of a catalog entity, or undefined for any other entity. */
 export function catalogRows(entity: unknown): object[] | undefined {
     if (entity === OrderStatusDefinition) return orderStatusRows()
     if (entity === OrderStatusGroup) return orderStatusGroupRows()
     if (entity === Bank) return bankRows()
+    if (entity === MobilePrefix) return mobilePrefixRows()
     return undefined
 }
 

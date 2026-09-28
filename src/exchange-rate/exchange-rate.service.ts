@@ -7,6 +7,7 @@ import {
     type OnApplicationBootstrap,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { EventEmitter2 } from '@nestjs/event-emitter'
 import { SchedulerRegistry } from '@nestjs/schedule'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
@@ -17,6 +18,12 @@ import { scheduledJobsEnabled } from '../config/jobs.js'
 import { newId } from '../database/id.js'
 import { ExchangeRate } from './entities/exchange-rate.entity.js'
 import {
+    EXCHANGE_RATE_EVENTS,
+    type RateSnapshot,
+    type RateSyncFailingEvent,
+    type RateSyncRecoveredEvent,
+} from './exchange-rate.events.js'
+import {
     EXCHANGE_RATE_PROVIDERS,
     RATE_SOURCE_LABELS,
     roundRate,
@@ -25,10 +32,15 @@ import {
 } from './providers/rate-provider.js'
 
 const HOUR_MS = 3_600_000
-const HISTORY_LIMIT = 30
+const HISTORY_LIMIT = 5
 /** A manual rate may be dated ahead (the BCV publishes the next business day's rate). */
 const MANUAL_MAX_DAYS_AHEAD = 7
 const SYNC_INTERVAL_NAME = 'exchange-rate-sync'
+/**
+ * Failed syncs in a row before the admins are alerted (once) on Telegram. With the default
+ * 120-minute interval, 3 runs are about 6 hours without a new rate.
+ */
+export const SYNC_FAILURE_ALERT_THRESHOLD = 3
 
 export const EXCHANGE_RATE_UNAVAILABLE = 'EXCHANGE_RATE_UNAVAILABLE'
 export const EXCHANGE_RATE_UNAVAILABLE_MESSAGE =
@@ -48,7 +60,10 @@ export interface ExchangeRateDto {
 
 /** The rate checkout would use right now, with its freshness. */
 export interface CurrentRateDto extends ExchangeRateDto {
-    /** After this instant the rate is too old for checkout (fecha valor + max age). */
+    /**
+     * After this instant the rate is too old for checkout: the start of its fecha valor plus the
+     * max age (by default, the end of the fecha valor day).
+     */
     usableUntil: string
     isStale: boolean
 }
@@ -94,7 +109,10 @@ function toDto(row: ExchangeRate): ExchangeRateDto {
     }
 }
 
-/** Last instant a rate with this fecha valor may be used: its day's start + max age. */
+/**
+ * Last instant a rate with this fecha valor may be used: its day's start + max age (with the
+ * default 24 h, the end of the fecha valor day in Caracas).
+ */
 export function rateUsableUntil(effectiveDate: string, maxAgeHours: number): Date {
     return new Date(startOfCaracasDay(effectiveDate).getTime() + maxAgeHours * HOUR_MS)
 }
@@ -115,12 +133,17 @@ export class ExchangeRateService implements OnApplicationBootstrap {
     private readonly syncIntervalMinutes: number
     private running: Promise<SyncResult> | null = null
     private lastSync: SyncResult | null = null
+    /** Failed syncs since the last success (in memory: a restart starts over). */
+    private consecutiveFailures = 0
+    /** The "sync failing" alert went out and no success followed yet. */
+    private failureAlerted = false
 
     constructor(
         @InjectRepository(ExchangeRate) private readonly rates: Repository<ExchangeRate>,
         @Inject(EXCHANGE_RATE_PROVIDERS) private readonly providers: ExchangeRateProvider[],
         private readonly config: ConfigService<Env, true>,
         private readonly scheduler: SchedulerRegistry,
+        private readonly events: EventEmitter2,
     ) {
         this.maxAgeHours = config.get('EXCHANGE_RATE_MAX_AGE_HOURS', { infer: true })
         this.syncIntervalMinutes = config.get('EXCHANGE_RATE_SYNC_INTERVAL_MINUTES', {
@@ -293,6 +316,69 @@ export class ExchangeRateService implements OnApplicationBootstrap {
 
         if (outcome === 'failed') this.logger.error('No exchange-rate provider answered')
         this.lastSync = { at: new Date().toISOString(), outcome, attempts }
+        await this.trackHealth(this.lastSync)
         return this.lastSync
+    }
+
+    /**
+     * Counts failed runs in a row: after SYNC_FAILURE_ALERT_THRESHOLD of them the admins are
+     * alerted once, and once more when a later run succeeds. Never throws.
+     */
+    private async trackHealth(result: SyncResult): Promise<void> {
+        try {
+            if (result.outcome === 'failed') {
+                this.consecutiveFailures++
+                if (
+                    this.failureAlerted ||
+                    this.consecutiveFailures < SYNC_FAILURE_ALERT_THRESHOLD
+                ) {
+                    return
+                }
+                this.failureAlerted = true
+                const event: RateSyncFailingEvent = {
+                    consecutiveFailures: this.consecutiveFailures,
+                    errors: result.attempts.map((attempt) => ({
+                        source: attempt.source,
+                        error: attempt.error ?? 'error',
+                    })),
+                    current: await this.snapshot(),
+                    at: result.at,
+                }
+                this.logger.warn(
+                    `Rate sync failed ${this.consecutiveFailures} times in a row; alerting admins`,
+                )
+                this.events.emit(EXCHANGE_RATE_EVENTS.syncFailing, event)
+                return
+            }
+            const failedRuns = this.consecutiveFailures
+            const alerted = this.failureAlerted
+            this.consecutiveFailures = 0
+            this.failureAlerted = false
+            if (!alerted) return
+            const event: RateSyncRecoveredEvent = {
+                outcome: result.outcome,
+                failedRuns,
+                current: await this.snapshot(),
+                at: result.at,
+            }
+            this.logger.log(`Rate sync recovered after ${failedRuns} failed runs`)
+            this.events.emit(EXCHANGE_RATE_EVENTS.syncRecovered, event)
+        } catch (error) {
+            this.logger.error(
+                `Rate sync alert failed: ${error instanceof Error ? error.message : String(error)}`,
+            )
+        }
+    }
+
+    private async snapshot(): Promise<RateSnapshot | null> {
+        const current = await this.current()
+        if (!current) return null
+        return {
+            rate: current.rate,
+            source: current.source,
+            effectiveDate: current.effectiveDate,
+            usableUntil: current.usableUntil,
+            isStale: current.isStale,
+        }
     }
 }

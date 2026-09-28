@@ -53,8 +53,12 @@ export const envSchema = z.object({
     ORDER_PAYMENT_WINDOW_HOURS: z.coerce.number().positive().max(720).default(24),
     /** How often unpaid orders past their deadline are expired. */
     ORDER_EXPIRY_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(10),
-    /** A BCV rate whose "fecha valor" is older than this cannot be used for checkout. */
-    EXCHANGE_RATE_MAX_AGE_HOURS: z.coerce.number().positive().max(720).default(72),
+    /**
+     * Hours from the start of a rate's "fecha valor" (Caracas) during which checkout may use it.
+     * The default, 24, ends at the close of the fecha valor day: the BCV publishes the next
+     * business day's rate the afternoon before, so a newer rate should always be there by then.
+     */
+    EXCHANGE_RATE_MAX_AGE_HOURS: z.coerce.number().positive().max(720).default(24),
     /** How often the BCV rate is fetched (it is also fetched at startup). */
     EXCHANGE_RATE_SYNC_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(120),
     /**
@@ -62,6 +66,30 @@ export const envSchema = z.object({
      * test suites never reach the network or the scheduler.
      */
     SCHEDULED_JOBS_ENABLED: optionalBoolean,
+    /** Token of the Telegram bot (@BotFather). Without it the bot stays off. Never logged. */
+    TELEGRAM_BOT_TOKEN: optionalString,
+    /**
+     * Turns the bot off even with a token. Default: on when a token exists, except under
+     * NODE_ENV=test so the test suites never reach Telegram.
+     */
+    TELEGRAM_ENABLED: optionalBoolean,
+    /** `polling` (default outside production) or `webhook` (default in production). */
+    TELEGRAM_MODE: z.enum(['polling', 'webhook']).optional(),
+    /**
+     * Secret Telegram sends in `X-Telegram-Bot-Api-Secret-Token` on every webhook call. Required
+     * in webhook mode; 1–256 characters of A-Z, a-z, 0-9, `_` and `-` (Telegram's rule).
+     */
+    TELEGRAM_WEBHOOK_SECRET: optionalString.pipe(
+        z
+            .string()
+            .regex(/^[A-Za-z0-9_-]{1,256}$/, 'Use 1-256 characters: letters, digits, _ or -')
+            .optional(),
+    ),
+    /** Bot API server (tests point it to a fake one). Default: https://api.telegram.org. */
+    TELEGRAM_API_ROOT: z
+        .url()
+        .optional()
+        .transform((value) => value?.replace(/\/+$/, '')),
 })
 
 export type Env = z.infer<typeof envSchema>

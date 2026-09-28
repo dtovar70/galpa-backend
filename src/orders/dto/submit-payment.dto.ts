@@ -2,6 +2,7 @@ import { Transform, type TransformFnParams } from 'class-transformer'
 import { IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator'
 import { msg } from '../../common/validation/messages.js'
 import { MaxInputLength } from '../../common/validation/text-limits.js'
+import { ID_NUMBER_MESSAGE } from '../../common/validation/ve-formats.js'
 import {
     MAX_AMOUNT_BS,
     ORDER_FIELD as FIELD,
@@ -57,7 +58,7 @@ export class SubmitPaymentDto {
     @Transform(trimUpperOrUndefined)
     @IsString({ message: msg.text(FIELD.payerIdNumber) })
     @MaxInputLength(FIELD.payerIdNumber)
-    @Matches(PAYER_ID_PATTERN, { message: msg.format(FIELD.payerIdNumber, 'V-12345678') })
+    @Matches(PAYER_ID_PATTERN, { message: ID_NUMBER_MESSAGE })
     payerIdNumber?: string
 
     @Transform(trim)

@@ -1,3 +1,4 @@
+import { orderQrPng } from '../qr/order-qr.js'
 import { printable, renderReceiptPdf, type ReceiptData } from './receipt-pdf.js'
 
 function receipt(items: number): ReceiptData {
@@ -56,6 +57,18 @@ describe('receipt PDF', () => {
         expect(raw).toContain('PlusJakartaSans')
         expect(raw).toContain('Fredoka')
         expect(raw).toContain('/MediaBox [0 0 595.28 841.89]')
+    })
+
+    it('prints the order QR next to the totals and stays on one page', async () => {
+        const plain = await renderReceiptPdf(receipt(3))
+        const withQr = await renderReceiptPdf({
+            ...receipt(3),
+            orderQr: await orderQrPng('https://manadarusso.com/pedido/MR-000012?t=abc', 360),
+        })
+        const images = (pdf: Buffer) =>
+            pdf.toString('latin1').match(/\/Subtype \/Image/g)?.length ?? 0
+        expect(images(withQr)).toBe(images(plain) + 1)
+        expect(pageCount(withQr)).toBe(1)
     })
 
     it('paginates long item lists', async () => {

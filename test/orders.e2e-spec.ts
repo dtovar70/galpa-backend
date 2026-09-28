@@ -718,6 +718,84 @@ describe('Orders (e2e)', () => {
         expect(storage.uploadPrivate).not.toHaveBeenCalled()
     })
 
+    it('takes only mobiles on an active operator code at checkout', async () => {
+        const post = (phone: string) =>
+            request(app.getHttpServer()).post('/api/orders').send(checkout({ phone }))
+
+        for (const phone of ['0212-5551234', '+58 414 1234567', '04141234567', '0414-123456']) {
+            const invalid = await post(phone).expect(400)
+            expect(invalid.body.details).toEqual([
+                {
+                    field: 'phone',
+                    errors: ['Escribe un celular válido, por ejemplo 0412-5550134.'],
+                },
+            ])
+        }
+        // 0426 exists in the catalog but is inactive; 0413 is not a code at all.
+        for (const code of ['0426', '0413']) {
+            const inactive = await post(`${code}-1234567`).expect(400)
+            expect(inactive.body.details).toEqual([
+                { field: 'phone', errors: [`El código ${code} no está disponible.`] },
+            ])
+        }
+        expect(db.table(Order)).toHaveLength(0)
+        await post('0424-1234567').expect(201)
+    })
+
+    it('checks the payer phone code and the cédula or RIF of the payment (customer and staff)', async () => {
+        const order = await createOrder()
+        const inactive = await payment(order.code, order.accessToken, {
+            payerPhone: '0426-1234567',
+            amountBs: '1',
+        }).expect(400)
+        expect(inactive.body.details).toEqual([
+            { field: 'payerPhone', errors: ['El código 0426 no está disponible.'] },
+        ])
+
+        const idMessage = 'Usa V, J o G seguido de 6 a 9 números, por ejemplo V-12345678.'
+        for (const payerIdNumber of ['E-12345678', 'P-1234567', 'V-12345', 'V-1234567890']) {
+            const invalid = await payment(order.code, order.accessToken, {
+                payerIdNumber,
+                amountBs: '1',
+            }).expect(400)
+            expect(invalid.body.details).toEqual([{ field: 'payerIdNumber', errors: [idMessage] }])
+        }
+        expect(db.table(OrderPayment)).toHaveLength(0)
+
+        const staff = (payerIdNumber: string) => {
+            const req = request(app.getHttpServer())
+                .post(`/api/admin/orders/${order.code}/payments`)
+                .set('Cookie', cookie('editor'))
+            for (const [key, value] of Object.entries({
+                reference: '77889900',
+                payerBankCode: '0134',
+                payerPhone: '0424-1234567',
+                payerIdNumber,
+                paidOn: caracasDay(),
+                amountBs: '30760,69',
+            })) {
+                req.field(key, value)
+            }
+            return req
+        }
+        const staffInvalid = await staff('E-12345678').expect(400)
+        expect(staffInvalid.body.details).toEqual([{ field: 'payerIdNumber', errors: [idMessage] }])
+
+        // Lowercase is uppercased; an empty cédula is simply not sent.
+        await payment(order.code, order.accessToken, {
+            payerIdNumber: 'v-12345678',
+            amountBs: '1',
+        }).expect(200)
+        expect(db.table(OrderPayment)[0]).toMatchObject({ payerIdNumber: 'V-12345678' })
+
+        await admin(order.code, '/transitions', 'admin', {
+            to: 'PAGO_RECHAZADO',
+            note: 'Monto incompleto',
+        }).expect(200)
+        await staff('J-123456789').expect(200)
+        expect(db.table(OrderPayment)[1]).toMatchObject({ payerIdNumber: 'J-123456789' })
+    })
+
     it('filters the admin list by one or several statuses', async () => {
         for (let index = 0; index < 3; index += 1) {
             await request(app.getHttpServer())

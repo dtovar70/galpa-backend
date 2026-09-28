@@ -4,7 +4,10 @@
  */
 import argon2 from 'argon2'
 import { User } from '../../auth/entities/user.entity.js'
+import { passwordPolicyErrors } from '../../auth/password-policy.js'
 import { Role } from '../../auth/role.enum.js'
+import { passwordChangeInstant } from '../../auth/session.config.js'
+import { feminine } from '../../common/validation/messages.js'
 import { Category } from '../../categories/entities/category.entity.js'
 import { ProductVariant } from '../../products/entities/product-variant.entity.js'
 import { Product } from '../../products/entities/product.entity.js'
@@ -26,17 +29,31 @@ async function seedAdmin(): Promise<void> {
     const email = requireEnv('SEED_ADMIN_EMAIL').toLowerCase()
     const password = requireEnv('SEED_ADMIN_PASSWORD')
     const name = requireEnv('SEED_ADMIN_NAME')
-    if (password.length < 8) {
-        throw new Error('SEED_ADMIN_PASSWORD must be at least 8 characters long.')
+    const problems = passwordPolicyErrors(password, feminine('SEED_ADMIN_PASSWORD'))
+    if (problems.length) {
+        throw new Error(problems.join(' '))
     }
 
     const users = dataSource.getRepository(User)
     const passwordHash = await argon2.hash(password)
-    const existing = await users.findOneBy({ email })
+    const existing = await users
+        .createQueryBuilder('user')
+        .where('LOWER(user.email) = :email', { email })
+        .getOne()
 
-    // Re-seeding updates the password/name, so changing the env and re-running rotates them.
+    // Re-seeding resets the password/name (closing that user's sessions) and makes the account
+    // an active ADMIN again: the way back in if every admin was locked out.
     if (existing) {
-        await users.update({ id: existing.id }, { name, passwordHash, role: Role.ADMIN })
+        await users.update(
+            { id: existing.id },
+            {
+                name,
+                passwordHash,
+                role: Role.ADMIN,
+                isActive: true,
+                passwordChangedAt: passwordChangeInstant(),
+            },
+        )
     } else {
         await users.insert({ id: newId(), email, name, passwordHash, role: Role.ADMIN })
     }

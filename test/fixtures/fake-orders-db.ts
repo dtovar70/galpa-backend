@@ -273,6 +273,8 @@ export class FakeDb {
                             ? {
                                   ...user,
                                   email: `${user.id}@example.com`,
+                                  isActive: true,
+                                  passwordChangedAt: null,
                                   createdAt: new Date(),
                                   updatedAt: new Date(),
                               }

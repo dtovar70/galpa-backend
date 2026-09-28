@@ -184,7 +184,10 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
         })
 
         it('offers no wa.me link when the phone is not a mobile', async () => {
-            const order = await createOrder({ phone: '0212-5551234' })
+            const order = await createOrder()
+            // Checkout only takes mobiles now; orders placed before that may hold a landline.
+            const stored = db.table(Order).find((row) => row.code === order.code)
+            if (stored) stored.customerPhone = '0212-5551234'
             const { body } = await admin(
                 'post',
                 `/admin/orders/${order.code}/whatsapp-message`,
@@ -314,6 +317,42 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
                 .expect('Content-Type', 'application/pdf')
             expect((adminPdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-')
             await http().get(`/api/admin/orders/${order.code}/receipt.pdf`).expect(401)
+        })
+
+        it('prints a QR: the customer link it came from, or one admin link reused for 24 h', async () => {
+            const order = await createOrder()
+            await admin('get', `/admin/orders/${order.code}/receipt.pdf`, 'editor').expect(409)
+            // A refused receipt never leaves a stray link behind.
+            expect(db.table(OrderAccessLink)).toHaveLength(1)
+            await pay(order.code, order.accessToken)
+            await transition(order.code, 'PAGO_VERIFICADO')
+
+            // The customer's receipt uses their own token: no new link.
+            await http()
+                .get(`/api/orders/${order.code}/receipt.pdf?t=${order.accessToken}`)
+                .expect(200)
+            expect(db.table(OrderAccessLink)).toHaveLength(1)
+
+            const download = () =>
+                admin('get', `/admin/orders/${order.code}/receipt.pdf`, 'editor')
+                    .buffer(true)
+                    .parse(binary)
+                    .expect(200)
+            const first = (await download()).body as Buffer
+            expect(first.toString('latin1')).toMatch(/\/Subtype \/Image/)
+            const links = db.table(OrderAccessLink)
+            expect(links).toHaveLength(2)
+            expect(links[1]).toMatchObject({ createdById: USERS.editor.id, revokedAt: null })
+
+            // Downloading again reuses that admin link instead of issuing another one.
+            await download()
+            await admin('get', `/admin/orders/${order.code}/receipt.pdf`, 'admin').expect(200)
+            expect(db.table(OrderAccessLink)).toHaveLength(2)
+
+            // A revoked link is not reused.
+            ;(links[1] as Row).revokedAt = new Date()
+            await download()
+            expect(db.table(OrderAccessLink)).toHaveLength(3)
         })
 
         it('is gone once the order is cancelled', async () => {

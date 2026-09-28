@@ -41,7 +41,7 @@ describe('envSchema (orders and exchange rate)', () => {
         const env = validateEnv(BASE)
         expect(env.ORDER_PAYMENT_WINDOW_HOURS).toBe(24)
         expect(env.ORDER_EXPIRY_INTERVAL_MINUTES).toBe(10)
-        expect(env.EXCHANGE_RATE_MAX_AGE_HOURS).toBe(72)
+        expect(env.EXCHANGE_RATE_MAX_AGE_HOURS).toBe(24)
         expect(env.EXCHANGE_RATE_SYNC_INTERVAL_MINUTES).toBe(120)
         expect(env.SCHEDULED_JOBS_ENABLED).toBeUndefined()
     })
@@ -70,5 +70,40 @@ describe('envSchema (public site URL)', () => {
             validateEnv({ ...BASE, PUBLIC_SITE_URL: 'https://manadarusso.com/' }).PUBLIC_SITE_URL,
         ).toBe('https://manadarusso.com')
         expect(envSchema.safeParse({ ...BASE, PUBLIC_SITE_URL: 'not a url' }).success).toBe(false)
+    })
+})
+
+describe('envSchema (Telegram)', () => {
+    it('leaves every Telegram variable optional', () => {
+        const env = validateEnv(BASE)
+        expect(env.TELEGRAM_BOT_TOKEN).toBeUndefined()
+        expect(env.TELEGRAM_ENABLED).toBeUndefined()
+        expect(env.TELEGRAM_MODE).toBeUndefined()
+        expect(env.TELEGRAM_WEBHOOK_SECRET).toBeUndefined()
+    })
+
+    it('parses the mode, the switch and the webhook secret', () => {
+        const env = validateEnv({
+            ...BASE,
+            TELEGRAM_BOT_TOKEN: ' 123:abc ',
+            TELEGRAM_ENABLED: 'false',
+            TELEGRAM_MODE: 'webhook',
+            TELEGRAM_WEBHOOK_SECRET: 'abc_DEF-123',
+            TELEGRAM_API_ROOT: 'http://127.0.0.1:8081/',
+        })
+        expect(env).toMatchObject({
+            TELEGRAM_BOT_TOKEN: '123:abc',
+            TELEGRAM_ENABLED: false,
+            TELEGRAM_MODE: 'webhook',
+            TELEGRAM_WEBHOOK_SECRET: 'abc_DEF-123',
+            TELEGRAM_API_ROOT: 'http://127.0.0.1:8081',
+        })
+    })
+
+    it('rejects an unknown mode and a secret Telegram would refuse', () => {
+        expect(envSchema.safeParse({ ...BASE, TELEGRAM_MODE: 'push' }).success).toBe(false)
+        expect(
+            envSchema.safeParse({ ...BASE, TELEGRAM_WEBHOOK_SECRET: 'has spaces!' }).success,
+        ).toBe(false)
     })
 })

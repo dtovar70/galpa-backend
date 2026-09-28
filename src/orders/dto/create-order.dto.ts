@@ -85,7 +85,7 @@ export class CreateOrderDto {
     @IsString({ message: msg.text(FIELD.phone) })
     @MaxInputLength(FIELD.phone)
     @Matches(CUSTOMER_PHONE_PATTERN, {
-        message: 'Escribe un teléfono válido, por ejemplo 0412-5550134.',
+        message: 'Escribe un celular válido, por ejemplo 0412-5550134.',
     })
     phone: string
 

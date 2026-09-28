@@ -5,6 +5,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter'
 import { ScheduleModule } from '@nestjs/schedule'
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler'
 import { AuthModule } from './auth/auth.module.js'
+import { PasswordResetModule } from './auth/password-reset/password-reset.module.js'
 import { CatalogsModule } from './catalogs/catalogs.module.js'
 import { CategoriesModule } from './categories/categories.module.js'
 import { ContentModule } from './content/content.module.js'
@@ -15,6 +16,8 @@ import { HealthController } from './health/health.controller.js'
 import { OrdersModule } from './orders/orders.module.js'
 import { ProductsModule } from './products/products.module.js'
 import { StorageModule } from './storage/storage.module.js'
+import { TelegramModule } from './telegram/telegram.module.js'
+import { UsersModule } from './users/users.module.js'
 
 @Module({
     imports: [
@@ -23,7 +26,8 @@ import { StorageModule } from './storage/storage.module.js'
             throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
             errorMessage: 'Demasiadas solicitudes. Espera un minuto e intenta de nuevo.',
         }),
-        // Domain events (order.created, order.payment_submitted, order.status_changed).
+        // Domain events (order.created, order.payment_submitted, order.status_changed); the Telegram
+        // bot listens to them.
         EventEmitterModule.forRoot(),
         ScheduleModule.forRoot(),
         DatabaseModule,
@@ -35,6 +39,9 @@ import { StorageModule } from './storage/storage.module.js'
         ContentModule,
         ExchangeRateModule,
         OrdersModule,
+        TelegramModule,
+        UsersModule,
+        PasswordResetModule,
     ],
     controllers: [HealthController],
     providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

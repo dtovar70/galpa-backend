@@ -41,12 +41,12 @@ export const CONTENT_LIST_SIZES = {
     faq: { minItems: 1, maxItems: 12 },
 } as const
 
-/** Any Venezuelan number, landlines included: "0412-5550134", "0253-1234567". */
-export const VE_PHONE_PATTERN = /^0\d{3}-\d{7}$/
-/** Venezuelan mobile number (WhatsApp, Pago Móvil): "0412-5550134". */
-export const VE_MOBILE_PATTERN = /^04\d{2}-\d{7}$/
-/** Cédula or RIF: "V-12345678", "J-123456789". */
-export const ID_NUMBER_PATTERN = /^[VEJPG]-\d{6,9}$/
+export {
+    ID_NUMBER_MESSAGE,
+    ID_NUMBER_PATTERN,
+    VE_MOBILE_PATTERN,
+    VE_PHONE_PATTERN,
+} from '../../common/validation/ve-formats.js'
 export const BANK_CODE_PATTERN = /^\d{4}$/
 /** Instagram / TikTok handle without "@"; empty hides the link. */
 export const SOCIAL_HANDLE_PATTERN = /^(?:[A-Za-z0-9._]{1,30})?$/

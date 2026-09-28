@@ -10,6 +10,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource, In, type EntityManager } from 'typeorm'
 import { BanksService } from '../catalogs/banks.service.js'
+import { MobilePrefixesService } from '../catalogs/mobile-prefixes.service.js'
 import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.service.js'
 import { addDays, caracasDay } from '../common/utils/caracas-date.js'
 import { ContentService } from '../content/content.service.js'
@@ -118,11 +119,16 @@ export class OrdersService {
         private readonly statuses: OrderStatusService,
         private readonly catalog: OrderStatusCatalogService,
         private readonly banks: BanksService,
+        private readonly mobilePrefixes: MobilePrefixesService,
         private readonly access: OrderAccessService,
         @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
     ) {}
 
     async create(dto: CreateOrderDto): Promise<CreatedOrderDto> {
+        // The DTO checked the shape ("0424-1234567"); the operator code must be active.
+        const phoneProblem = await this.mobilePrefixes.phoneProblem(dto.phone)
+        if (phoneProblem) throw fieldError('phone', phoneProblem)
+
         const content = await this.content.getAll()
         if (!isPaymentConfigured(content.payment)) {
             throw new ServiceUnavailableException({
@@ -297,6 +303,8 @@ export class OrdersService {
         // Only active banks of the catalog; the name is kept as a snapshot on the payment.
         const bank = await this.banks.findActive(dto.payerBankCode)
         if (!bank) throw fieldError('payerBankCode', 'Elige el banco desde el que pagaste.')
+        const phoneProblem = await this.mobilePrefixes.phoneProblem(dto.payerPhone)
+        if (phoneProblem) throw fieldError('payerPhone', phoneProblem)
         const bankName = bank.name
 
         let proofKey: string | null = null

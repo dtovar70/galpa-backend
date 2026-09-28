@@ -1,0 +1,165 @@
+import {
+    escapeHtml,
+    formatCaracasDateTime,
+    formatCaracasTime,
+    formatDay,
+    paymentMessage,
+    rateSyncFailingMessage,
+    rateSyncRecoveredMessage,
+    truncate,
+    visibleLength,
+    type PaymentMessageData,
+} from './telegram-format.js'
+
+const DATA: PaymentMessageData = {
+    code: 'MR-000012',
+    customerName: 'Ana & <Co>',
+    customerPhone: '0414-1234567',
+    items: Array.from({ length: 8 }, (_, index) => ({
+        quantity: index + 1,
+        productName: `Taza ${index}`,
+        variantLabel: index === 0 ? '15 oz' : null,
+        personalization: index === 0 ? 'Para <mamá>' : null,
+    })),
+    totalUsd: 1234.5,
+    totalBs: 1054853.41,
+    exchangeRate: 854.4637,
+    stockConflict: null,
+    payment: {
+        reference: '00123456',
+        payerBankCode: '0102',
+        payerBankName: 'Banco de Venezuela',
+        payerPhone: '0414-1234567',
+        payerIdNumber: 'V-12345678',
+        paidOn: '2026-09-25',
+        amountBs: 1054853.41,
+        expectedBs: 1054853.41,
+        duplicateReference: false,
+        late: false,
+        source: 'customer',
+        recordedByName: null,
+        hasProof: true,
+    },
+    adminUrl: 'https://manadarusso.com/admin/pedidos/MR-000012',
+}
+
+describe('telegram-format', () => {
+    it('escapes HTML and truncates by characters', () => {
+        expect(escapeHtml('<b>"A" & B</b>')).toBe('&lt;b&gt;&quot;A&quot; &amp; B&lt;/b&gt;')
+        expect(truncate('  abcdef  ', 4)).toBe('abc…')
+        expect(truncate('🐾🐾🐾', 3)).toBe('🐾🐾🐾')
+        expect(visibleLength('<b>a &amp; b</b>')).toBe(5)
+    })
+
+    it('formats Caracas dates and times', () => {
+        const date = new Date('2026-09-25T19:05:00Z')
+        expect(formatCaracasTime(date)).toBe('3:05 p. m.')
+        expect(formatCaracasDateTime(date)).toBe('25/09/2026, 3:05 p. m.')
+        expect(formatCaracasTime(new Date('2026-09-25T04:30:00Z'))).toBe('12:30 a. m.')
+        expect(formatDay('2026-09-05')).toBe('05/09/2026')
+    })
+
+    it('renders the payment with escaped customer text, money and capped items', () => {
+        const text = paymentMessage(DATA)
+        expect(text).toContain('🧾 <b>Nuevo pago por verificar</b> · <b>MR-000012</b>')
+        expect(text).toContain('Ana &amp; &lt;Co&gt;')
+        expect(text).toContain('• 1 × Taza 0 (15 oz)\n   <i>“Para &lt;mamá&gt;”</i>')
+        expect(text).toContain('…y 2 artículos más')
+        expect(text).not.toContain('Taza 6')
+        expect(text).toContain('$1.234,50 · Bs. 1.054.853,41')
+        expect(text).toContain('Tasa BCV 854,46')
+        expect(text).toContain('Banco de Venezuela (0102)')
+        expect(text).toContain('Fecha: 25/09/2026')
+        expect(text).not.toContain('⚠️')
+    })
+
+    it('lists every warning', () => {
+        const text = paymentMessage({
+            ...DATA,
+            stockConflict: {
+                detectedAt: '',
+                resolvedAt: null,
+                resolvedById: null,
+                lines: [
+                    {
+                        productId: 'p',
+                        productName: 'Taza',
+                        requested: 3,
+                        available: 1,
+                        reserved: 1,
+                    },
+                ],
+            },
+            payment: {
+                ...DATA.payment,
+                amountBs: 1054900,
+                duplicateReference: true,
+                late: true,
+                source: 'admin',
+                recordedByName: 'Dueña',
+                hasProof: false,
+            },
+        })
+        expect(text).toContain('⚠️ <b>Monto no coincide:</b> sobran Bs. 46,59')
+        expect(text).toContain('⚠️ <b>Referencia repetida')
+        expect(text).toContain('⏰ <b>Pago fuera de plazo</b>')
+        expect(text).toContain('📦 <b>Stock insuficiente:</b> «Taza» pidió 3, hay 1')
+        expect(text).toContain('Registrado manualmente en el panel por Dueña · sin captura')
+    })
+
+    it('appends the resolution line', () => {
+        expect(paymentMessage(DATA, { resolution: '✅ Hecho' }).endsWith('\n\n✅ Hecho')).toBe(true)
+    })
+})
+
+describe('rate sync alerts', () => {
+    const current = {
+        rate: 36.5,
+        source: 'bcv' as const,
+        effectiveDate: '2026-09-25',
+        usableUntil: '2026-09-26T04:00:00.000Z',
+        isStale: false,
+    }
+
+    it('says both sources failed, the current rate and when orders pause', () => {
+        const text = rateSyncFailingMessage({
+            consecutiveFailures: 3,
+            errors: [],
+            current,
+            at: '2026-09-25T18:00:00.000Z',
+        })
+        expect(text).toContain('No se pudo obtener la tasa del BCV')
+        expect(text).toContain('BCV y DolarApi')
+        expect(text).toContain('36,5000 Bs/$')
+        expect(text).toContain('fecha valor 25/09/2026')
+        expect(text).toContain('los pedidos se pausan el 26/09/2026, 12:00 a. m.')
+        expect(text).toContain('Tasa BCV')
+    })
+
+    it('says orders are already paused when the rate expired or is missing', () => {
+        const at = '2026-09-26T18:00:00.000Z'
+        expect(
+            rateSyncFailingMessage({
+                consecutiveFailures: 3,
+                errors: [],
+                current: { ...current, isStale: true },
+                at,
+            }),
+        ).toContain('Los pedidos ya están pausados')
+        expect(
+            rateSyncFailingMessage({ consecutiveFailures: 3, errors: [], current: null, at }),
+        ).toContain('Todavía no hay ninguna tasa guardada')
+    })
+
+    it('announces the recovery with the rate in use', () => {
+        const text = rateSyncRecoveredMessage({
+            outcome: 'stored',
+            failedRuns: 3,
+            current,
+            at: '2026-09-25T20:00:00.000Z',
+        })
+        expect(text).toContain('La tasa del BCV se volvió a obtener')
+        expect(text).toContain('36,5000 Bs/$')
+        expect(text).not.toContain('pausados')
+    })
+})

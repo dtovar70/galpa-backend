@@ -4,6 +4,7 @@ import type { PaymentContent } from '../content.types.js'
 import {
     BANK_CODE_PATTERN,
     CONTENT_LIMITS as MAX,
+    ID_NUMBER_MESSAGE,
     ID_NUMBER_PATTERN,
     VE_MOBILE_PATTERN,
 } from './content-limits.js'
@@ -31,9 +32,7 @@ export class PaymentContentDto implements PaymentContent {
     phone: string
 
     @ContentText(FIELD.idNumber, { max: 12 })
-    @Matches(ID_NUMBER_PATTERN, {
-        message: msg.format(FIELD.idNumber, 'V-12345678 o J-123456789'),
-    })
+    @Matches(ID_NUMBER_PATTERN, { message: ID_NUMBER_MESSAGE })
     idNumber: string
 
     @ContentText(FIELD.holderName, { max: MAX.holderName })

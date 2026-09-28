@@ -67,7 +67,11 @@ export class OrderWhatsAppService {
         private readonly access: OrderAccessService,
     ) {}
 
-    async prepare(code: string, user: AuthUser): Promise<WhatsAppMessageDto> {
+    /**
+     * `issuedById` is recorded on the fresh link: the admin asking, or the admin a Telegram chat
+     * acts for (null when that chat has none).
+     */
+    async prepare(code: string, issuedById: string | null): Promise<WhatsAppMessageDto> {
         const order = await this.dataSource.getRepository(Order).findOne({
             where: { code },
             relations: { payments: true, history: true },
@@ -83,7 +87,7 @@ export class OrderWhatsAppService {
         const receipt = used.has('comprobante') && hasReceipt(order, order.payments ?? [])
         let link: IssuedAccessLink | null = null
         if (used.has('enlace') || receipt) {
-            link = await this.access.issue(order.id, order.code, user.id)
+            link = await this.access.issue(order.id, order.code, issuedById)
         }
         const receiptUrl = receipt && link ? this.access.receiptUrl(order.code, link.token) : null
 

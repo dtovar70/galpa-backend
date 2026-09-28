@@ -4,6 +4,7 @@ import {
     Get,
     HttpCode,
     HttpStatus,
+    Patch,
     Post,
     Req,
     Res,
@@ -17,9 +18,11 @@ import { Public } from '../common/decorators/public.decorator.js'
 import { Roles } from '../common/decorators/roles.decorator.js'
 import type { AuthenticatedRequest, AuthSession, AuthUser } from '../common/types/auth-user.js'
 import type { Env } from '../config/env.schema.js'
-import { SESSION_COOKIE } from './auth.constants.js'
+import { SESSION_COOKIE, toAuthUser } from './auth.constants.js'
 import { AuthService } from './auth.service.js'
+import { ChangePasswordDto } from './dto/change-password.dto.js'
 import { LoginDto } from './dto/login.dto.js'
+import { UpdateMeDto } from './dto/update-me.dto.js'
 import { Role } from './role.enum.js'
 
 @Controller('auth')
@@ -38,9 +41,16 @@ export class AuthController {
         }
     }
 
-    /** Signs a new token, sets it as the session cookie and returns the session body. */
-    private async issueSession(user: AuthUser, res: Response): Promise<AuthSession> {
-        const { token, ...lifetime } = await this.auth.createSession(user)
+    /**
+     * Signs a new token, sets it as the session cookie and returns the session body.
+     * `passwordChangedAt`: the token is never dated before it (see `sessionIssuedAt`).
+     */
+    private async issueSession(
+        user: AuthUser,
+        res: Response,
+        passwordChangedAt: Date | null = null,
+    ): Promise<AuthSession> {
+        const { token, ...lifetime } = await this.auth.createSession(user, passwordChangedAt)
         res.cookie(SESSION_COOKIE, token, {
             ...this.cookieOptions(),
             maxAge: Math.max(0, lifetime.expiresAt.getTime() - Date.now()),
@@ -48,7 +58,10 @@ export class AuthController {
         return this.auth.toAuthSession(user, lifetime)
     }
 
-    /** Admin login. There is no public registration: users are created by the seed. */
+    /**
+     * Admin login. There is no public registration: users are created by the seed or by an
+     * ADMIN (`/admin/users`). A deactivated account gets the same error as a wrong password.
+     */
     @Public()
     @Throttle({ default: { limit: 5, ttl: 60_000 } })
     @Post('login')
@@ -58,7 +71,9 @@ export class AuthController {
         @Res({ passthrough: true }) res: Response,
     ): Promise<AuthSession> {
         const user = await this.auth.validateCredentials(dto.email, dto.password)
-        return this.issueSession(user, res)
+        const session = await this.issueSession(toAuthUser(user), res, user.passwordChangedAt)
+        await this.auth.recordLogin(user.id)
+        return session
     }
 
     /**
@@ -87,10 +102,46 @@ export class AuthController {
 
     @Get('me')
     me(@CurrentUser() user: AuthUser, @Req() request: AuthenticatedRequest): AuthSession {
-        // Always set by JwtAuthGuard on authenticated routes.
-        if (!request.sessionToken) {
-            throw new UnauthorizedException('Debes iniciar sesión para continuar.')
-        }
-        return this.auth.toAuthSession(user, request.sessionToken)
+        return this.auth.toAuthSession(user, currentSession(request))
     }
+
+    /** "Mi cuenta" (any role): change the display name. */
+    @Patch('me')
+    async updateMe(
+        @CurrentUser() user: AuthUser,
+        @Req() request: AuthenticatedRequest,
+        @Body() dto: UpdateMeDto,
+    ): Promise<AuthSession> {
+        const updated = await this.auth.updateOwnName(user.id, dto.name)
+        return this.auth.toAuthSession(updated, currentSession(request))
+    }
+
+    /**
+     * "Mi cuenta" (any role): change the password. Every other session is closed; this one
+     * gets a new cookie dated at the change, so it stays open. Throttled like login, since a
+     * stolen session could try to guess the current password.
+     */
+    @Throttle({ default: { limit: 5, ttl: 60_000 } })
+    @Post('me/password')
+    @HttpCode(HttpStatus.OK)
+    async changePassword(
+        @CurrentUser() user: AuthUser,
+        @Body() dto: ChangePasswordDto,
+        @Res({ passthrough: true }) res: Response,
+    ): Promise<AuthSession> {
+        const { user: updated, passwordChangedAt } = await this.auth.changeOwnPassword(
+            user.id,
+            dto.currentPassword,
+            dto.newPassword,
+        )
+        return this.issueSession(updated, res, passwordChangedAt)
+    }
+}
+
+/** Lifetime of the token that authenticated the request (always set by JwtAuthGuard). */
+function currentSession(request: AuthenticatedRequest) {
+    if (!request.sessionToken) {
+        throw new UnauthorizedException('Debes iniciar sesión para continuar.')
+    }
+    return request.sessionToken
 }

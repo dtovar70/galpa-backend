@@ -2,6 +2,10 @@ import { BadRequestException, NotFoundException } from '@nestjs/common'
 import type { Repository } from 'typeorm'
 import { Role } from '../auth/role.enum.js'
 import type { BanksService } from '../catalogs/banks.service.js'
+import {
+    unavailablePrefixMessage,
+    type MobilePrefixesService,
+} from '../catalogs/mobile-prefixes.service.js'
 import type { AuthUser } from '../common/types/auth-user.js'
 import { DEFAULT_SITE_CONTENT } from './content.defaults.js'
 import { ContentService, mergeSection } from './content.service.js'
@@ -34,11 +38,23 @@ function setup(rows: Partial<SiteContentEntry>[] = []) {
             ),
         ),
     }
+    /** The `mobile_prefixes` catalog: 0426 exists but is inactive. */
+    const activePrefixes = ['0412', '0414', '0416', '0422', '0424']
+    const mobilePrefixes = {
+        phoneProblem: vi.fn((phone: string) =>
+            Promise.resolve(
+                activePrefixes.includes(phone.slice(0, 4))
+                    ? null
+                    : unavailablePrefixMessage(phone.slice(0, 4)),
+            ),
+        ),
+    }
     const service = new ContentService(
         entries as unknown as Repository<SiteContentEntry>,
         banks as unknown as BanksService,
+        mobilePrefixes as unknown as MobilePrefixesService,
     )
-    return { service, entries, banks }
+    return { service, entries, banks, mobilePrefixes }
 }
 
 /** The validation error details of a rejected update. */
@@ -142,7 +158,7 @@ describe('ContentService', () => {
             },
             {
                 field: 'idNumber',
-                errors: ['La cédula o RIF debe tener el formato V-12345678 o J-123456789.'],
+                errors: ['Usa V, J o G seguido de 6 a 9 números, por ejemplo V-12345678.'],
             },
             { field: 'holderName', errors: ['El titular es obligatorio.'] },
         ])
@@ -177,6 +193,73 @@ describe('ContentService', () => {
         await expect(
             service.update('payment', { ...payment, idNumber: 'V-12345678' }, USER),
         ).resolves.toBeDefined()
+    })
+
+    it('accepts only V, J or G followed by 6 to 9 digits', async () => {
+        const { service } = setup()
+        const payment = {
+            bankCode: '0102',
+            bankName: 'Banco de Venezuela',
+            phone: '0412-5550134',
+            idNumber: 'V-12345678',
+            holderName: 'Manada Russo',
+            instructions: '',
+        }
+        for (const idNumber of [
+            'E-12345678',
+            'P-1234567',
+            'V-12345',
+            'V-1234567890',
+            'v-1234567',
+        ]) {
+            expect(
+                await detailsOf(service.update('payment', { ...payment, idNumber }, USER)),
+            ).toEqual([
+                {
+                    field: 'idNumber',
+                    errors: ['Usa V, J o G seguido de 6 a 9 números, por ejemplo V-12345678.'],
+                },
+            ])
+        }
+        for (const idNumber of ['V-123456', 'G-20000001', 'J-123456789']) {
+            await expect(
+                service.update('payment', { ...payment, idNumber }, USER),
+            ).resolves.toBeDefined()
+        }
+    })
+
+    it('refuses a Pago Móvil phone or a WhatsApp on an inactive operator code', async () => {
+        const { service, entries } = setup()
+        const payment = {
+            bankCode: '0104',
+            bankName: 'Banco',
+            phone: '0426-1234567',
+            idNumber: 'V-12345678',
+            holderName: 'Manada Russo',
+            instructions: '',
+        }
+        expect(await detailsOf(service.update('payment', payment, USER))).toEqual([
+            { field: 'bankCode', errors: ['Elige un banco de la lista.'] },
+            { field: 'phone', errors: ['El código 0426 no está disponible.'] },
+        ])
+        expect(
+            await detailsOf(
+                service.update(
+                    'contact',
+                    { ...DEFAULT_SITE_CONTENT.contact, whatsapp: '0426-1234567' },
+                    USER,
+                ),
+            ),
+        ).toEqual([{ field: 'whatsapp', errors: ['El código 0426 no está disponible.'] }])
+        // The contact phone also takes landlines and is not checked against the catalog.
+        await expect(
+            service.update(
+                'contact',
+                { ...DEFAULT_SITE_CONTENT.contact, phone: '0426-1234567' },
+                USER,
+            ),
+        ).resolves.toBeDefined()
+        expect(entries.query).toHaveBeenCalledTimes(1)
     })
 
     it('takes the Pago Móvil bank from the active banks of the catalog', async () => {

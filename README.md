@@ -4,6 +4,7 @@ NestJS + TypeORM + PostgreSQL backend for the `frontend-cups` storefront.
 Phase 1: admin auth with roles, products/categories CRUD, image uploads.
 Phase 2: editable site content (texts and business data) edited from the admin.
 Phase 3: guest orders, the BCV exchange rate and Pago Móvil payments verified by hand.
+Phase 4: a Telegram bot that sends each payment to the owner and lets her confirm or reject it.
 
 ## Prerequisites
 
@@ -87,11 +88,17 @@ Public:
 
 Auth (session = httpOnly cookie `mr_session`):
 
-- `POST /auth/login` `{ email, password }` (rate-limited to 5/min) → user + `session`
+- `POST /auth/login` `{ email, password }` (rate-limited to 5/min) → user + `session`. The email
+  is matched ignoring case. A deactivated account gets the same `401` "Correo o contraseña
+  incorrectos." as a wrong password, after the same argon2 work. Records `last_login_at`.
 - `POST /auth/refresh` (requires a session, rate-limited to 30/min) → re-issues the cookie; same
   body as login
 - `POST /auth/logout`
 - `GET /auth/me` → user + `session`
+- `PATCH /auth/me` `{ name }` (any role, "Mi cuenta") → user + `session`
+- `POST /auth/me/password` `{ currentPassword, newPassword }` (any role, rate-limited to 5/min) →
+  user + `session` and a new cookie. A wrong current password is a `400` pinned on
+  `currentPassword` (not a `401`). Every other session of the user is closed; this one stays open.
 
 `session` is `{ expiresAt, expiresInSeconds, ttlSeconds, idleMinutes, promptSeconds }`.
 
@@ -153,7 +160,7 @@ admin edits them at `/admin/contenido`.
   `{envioGratis}` (threshold, `$35`), `{tarifaEnvio}` (flat rate), `{produccion}` (production copy),
   `{categorias}` (category count in words, home only), `{marca}` and `{ciudad}` (About paragraphs).
 - **Validation.** Each section has its own DTO (`src/content/dto`): lengths, list sizes, formats
-  (`0412-5550134`, `V-12345678` / `J-123456789`, bank code `0102`, handles without `@`), money
+  (`0412-5550134` on an active code, `V-12345678` / `J-123456789`, bank code `0102`, handles without `@`), money
   `>= 0` with 2 decimals, known placeholders and paired asterisks. Errors use the usual Spanish
   `{ message, details: [{ field, errors }] }` body; list items of plain-text lists are reported on
   the list with their position (`El anuncio 2 es obligatorio.`), nested ones by path
@@ -195,6 +202,20 @@ code's behavior depends on stays in code.
   the table (`order_payments.payer_bank_code` references it; the content's `bankName` is taken
   from it). A bank that a payment or the Pago Móvil details use cannot be deleted
   (`409`); deactivate it instead.
+- **Mobile operator codes.** `mobile_prefixes` (`code` varchar(4) PK, CHECK `^04[0-9]{2}$`,
+  `is_active`, `sort_order`; migration `1791000000000-MobilePrefixes`), seeded with 0412, 0414,
+  0416, 0422 and 0424 active and 0426 **inactive** (activate it in Catálogos). Every mobile field
+  (content Pago Móvil `phone` and contact `whatsapp`, checkout `phone`, payment `payerPhone`) must
+  match `^04\d{2}-\d{7}$` (`src/common/validation/ve-formats.ts`) **and** use an active code
+  (`400` "El código 0426 no está disponible." on the field). Phones stay text, so there is no
+  foreign key and no data change: stored numbers on an inactive code keep showing; only new saves
+  are checked. The contact `phone` also takes landlines (`0251-…`) and is not checked. The rows are
+  cached in memory for 60 s and dropped after every admin edit. A code can be deleted only while no
+  order in progress (anything but `ENTREGADO`, `CANCELADO`, `EXPIRADO`, checkout or payer phone)
+  and no content phone above (defaults included) uses it (`409`); deactivate it instead.
+- **Cédula / RIF** stays in code (legal document types the pattern depends on): `^[VJG]-\d{6,9}$`
+  for the content `idNumber` and the optional `payerIdNumber` ("Usa V, J o G seguido de 6 a 9
+  números, por ejemplo V-12345678."). E and P are no longer accepted; the payer's is optional.
 
 Endpoints:
 
@@ -202,7 +223,8 @@ Endpoints:
 highlight, statuses }], statuses: [{ code, label, customerLabel, customerTitle,
 customerDescription, groupCode, tone, sortOrder, isTerminal }] }`, both sorted.
 - `GET /catalogs/banks` (public) → active banks `[{ code, name }]`, in order.
-  Both are sent with `Cache-Control: no-cache` and a weak ETag, like `GET /content`.
+- `GET /catalogs/mobile-prefixes` (public) → active codes `[{ code }]`, in order.
+  All three are sent with `Cache-Control: no-cache` and a weak ETag, like `GET /content`.
 - ADMIN only, under `/admin/catalogs`: `GET order-statuses` (`no-store`),
   `PATCH order-statuses/:code` `{ label?, customerLabel?, customerTitle?, customerDescription?,
 tone?, whatsappTemplate? }` (only the admin catalog carries `whatsappTemplate`), `PATCH order-statuses/groups/:code` `{ label?, description?, sortOrder? }` (both
@@ -210,7 +232,10 @@ tone?, whatsappTemplate? }` (only the admin catalog carries `whatsappTemplate`),
   `GET banks` (with `isActive`, `sortOrder`, `paymentCount`, `usedByPaymentContent`),
   `POST banks` `{ code, name, isActive? }` (`409` for a taken code), `PATCH banks/:code`
   `{ name?, isActive? }`, `PATCH banks/order` `{ codes }` (every code once) and
-  `DELETE banks/:code` (`409` while in use).
+  `DELETE banks/:code` (`409` while in use); `GET mobile-prefixes` (with `isActive`, `sortOrder`,
+  `activeOrderCount`, `contentFields`), `POST mobile-prefixes` `{ code, isActive? }` (`409` for a
+  taken code), `PATCH mobile-prefixes/:code` `{ isActive }`, `PATCH mobile-prefixes/order`
+  `{ codes }` and `DELETE mobile-prefixes/:code` (`409` while in use).
 
 ## Orders
 
@@ -253,6 +278,14 @@ the logo from `src/assets`, copied to `dist/assets` by the `assets` entry of `ne
 licenses next to the fonts). Only for an order with a verified payment that is not `CANCELADO`
 (`409` otherwise); long item lists paginate. Emoji in customer text are dropped (the fonts cannot
 draw them).
+
+**Order QR.** The receipt prints a small QR (about 76 pt, "Escanea para ver el estado de tu
+pedido") of the customer's private link (`qrcode` package, error correction M, 4-module quiet
+zone, black on white; `src/orders/qr/order-qr.ts`). It is tied to the order code + token, never to
+the customer's email. The public receipt uses the token of the request. The admin receipt needs a
+link: it reuses the newest admin-issued link of the order from the last 24 hours when this process
+still holds its raw token in memory (only hashes are stored, so after a restart, or for a revoked
+link, a new one is issued with `created_by` = the admin). A receipt that answers 409 issues nothing.
 
 **Payment.** The customer pays by Pago Móvil outside the site and sends the proof (reference,
 bank, phone, optional cédula, date, amount in Bs, optional screenshot). A reference already used
@@ -377,16 +410,157 @@ url, link, receiptUrl }` (the current status's template rendered; `url` is the w
 
 Behind a reverse proxy, enable Express `trust proxy` so the throttler sees the client IP.
 
+## Telegram bot
+
+Code in `src/telegram` ([grammY](https://grammy.dev)). When a payment proof arrives, every linked
+chat gets the order (customer, items, totals, Pago Móvil data, the proof photo read privately from
+storage, and the warnings: amount off, repeated reference, late payment, missing stock) with
+**✅ Pago recibido** / **❌ Rechazar** buttons. Both call `OrderStatusService.transition()` with a
+`telegram` actor (the admin who linked the chat is recorded as the reviewer), exactly like the
+admin panel, and the messages in every chat are then edited so nobody acts on stale buttons. A
+payment handled on the web updates the Telegram copies the same way (`order.status_changed`).
+
+**Configuration** (all optional; without a token the bot is off and the API works as before):
+
+| Variable                  | Default                                                  | What it does                                           |
+| ------------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| `TELEGRAM_BOT_TOKEN`      | —                                                        | Token from @BotFather. Never logged.                   |
+| `TELEGRAM_ENABLED`        | `true` when a token exists (`false` under NODE_ENV=test) | `false` turns the bot off without removing the token.  |
+| `TELEGRAM_MODE`           | `polling` (development), `webhook` (production)          | How updates arrive.                                    |
+| `TELEGRAM_WEBHOOK_SECRET` | —                                                        | Required in webhook mode (1–256 of `A-Z a-z 0-9 _ -`). |
+| `TELEGRAM_API_ROOT`       | `https://api.telegram.org`                               | Only for tests (a fake Bot API).                       |
+
+The startup log says `Telegram bot disabled: <reason>` or `Telegram bot @<name> connected`. The
+connection never blocks the boot: Telegram or network errors are logged and retried with backoff.
+
+- **Polling** (local development): starts after the app is up and stops on shutdown
+  (`enableShutdownHooks`), so `nest start --watch` reloads hand over cleanly. A 409 "terminated by
+  other getUpdates request" (two processes polling the same token) is logged as a warning and
+  retried. Polling calls `deleteWebhook`, so **never poll with the production token** once
+  production uses a webhook: create a second bot for development, or set `TELEGRAM_ENABLED=false`.
+- **Webhook** (production, e.g. Railway): set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`
+  (e.g. `openssl rand -hex 32`), `PUBLIC_API_URL` (the public HTTPS address of the API, e.g.
+  `https://manada-api.up.railway.app`) and, if you want to be explicit, `TELEGRAM_MODE=webhook`.
+  At startup the API calls `setWebhook(<PUBLIC_API_URL>/api/telegram/webhook)` with the secret.
+  `POST /api/telegram/webhook` is public and not throttled; it answers 401 unless the
+  `X-Telegram-Bot-Api-Secret-Token` header matches. Run a single instance (the pending-reason and
+  rate-limit state is in memory). `https://api.telegram.org/bot<token>/getWebhookInfo` shows the
+  delivery status.
+
+**Linking a chat** (Telegram bots cannot message a phone number; the person writes first). In
+the admin, **Telegram → Vincular un chat** creates a 6-digit code valid for 10 minutes and usable
+once (only its HMAC is stored, keyed with `JWT_SECRET`). In Telegram, open the bot and send
+`/start 482913` (or use the `t.me/<bot>?start=<code>` link). The chat is linked on behalf of the
+admin who created the code. Anyone else gets "este es un bot privado" and never sees order data.
+Groups are ignored.
+
+**In the chat:** `/pendientes` (up to 10 payments waiting, each with its buttons), `/pedido
+MR-000012` (or `/pedido 12`), `/micuenta` (the linked panel account), `/ayuda`, `/salir` (unlinks after a confirmation). **Rechazar**
+offers quick reasons ("Monto incompleto", "No encontramos el pago", "Referencia inválida") or
+"Otro motivo…", which asks for a typed reason (ForceReply, max. 500 characters, 10 minutes). The
+reason is what the customer reads on the order page. After a rejection the message offers
+"💬 Avisar al cliente por WhatsApp" (the status's WhatsApp template, as in the admin). With an
+unresolved stock conflict, **Pago recibido** first asks "✅ Confirmar igual (falta stock)", which
+sends `acknowledgeStockConflict`. A payment already handled (web or another chat) answers "Este
+pago ya fue procesado: <estado>" and refreshes the message; double taps are ignored. Each chat is
+limited to 30 actions per minute (and 5 link attempts per 10 minutes). A chat that blocks the bot
+is marked inactive and reactivated when it writes again. "Nuevos pedidos" (per chat, off by
+default) also sends a short notice for every new order.
+
+**Tables** (migration `1790800000000-TelegramBot`): `telegram_chats` (`chat_id` bigint unique,
+`username`/`first_name` varchar(100), `linked_by_user_id` → `users` SET NULL, `is_active`,
+`notify_new_orders`, `linked_at`, `last_seen_at`), `telegram_link_codes` (`code_hash`,
+`created_by_user_id` → `users` CASCADE, `expires_at`, `used_at`, `used_by_chat_id`) and
+`telegram_messages` (`chat_id` → `telegram_chats.chat_id` CASCADE, `message_id`, `order_id` →
+`orders` CASCADE, `payment_id` → `order_payments` CASCADE, `kind`, `resolution`, `created_at`):
+what the bot sent, so it can edit it later.
+
+Admin endpoints (ADMIN only): `GET /admin/telegram` → `{ bot: { enabled, mode, connected,
+username, name, error }, chats }`; `POST /admin/telegram/link-codes` → `{ code, expiresAt,
+expiresInSeconds, botUsername, deepLink }` (503 while the bot is not connected);
+`PATCH /admin/telegram/chats/:id` `{ notifyNewOrders }`; `POST /admin/telegram/chats/:id/test`
+(502 when Telegram refuses); `DELETE /admin/telegram/chats/:id`.
+
+Tests: `src/telegram/*.spec.ts` and `test/telegram.e2e-spec.ts` run the bot against a fake Bot
+API (`test/fixtures/fake-telegram.ts`): nothing reaches Telegram.
+
+**Password recovery** (`src/auth/password-reset`, migration `1791100000000-PasswordResetCodes`).
+Panel users who forgot their password get a one-time 6-digit code through a delivery channel
+(`PasswordResetChannel`; today only `TelegramPasswordResetChannel`, email is Phase 5: add it to the
+`PASSWORD_RESET_CHANNEL_LIST` factory in `password-reset.module.ts`, the flow does not change).
+
+- `POST /auth/password-reset/request` `{ email }` (public; 3 per 15 minutes per IP and per email,
+  `429` past that) → always `202 { message }` with the same text. The work runs after the
+  response (so its time does not depend on the account): only an **active** user with at least one
+  **active** chat they linked (`telegram_chats.linked_by_user_id`) gets a code, sent to all those
+  chats ("🔐 Código para restablecer tu contraseña…", `protect_content`). Their older unused codes
+  expire. Unknown email, inactive user, no chat, bot off: nothing is sent and it is only logged.
+- `POST /auth/password-reset/confirm` `{ email, code, newPassword }` (public, 10 per 15 minutes per
+  IP) → `204`. Only the newest live code counts; every attempt is counted atomically before the
+  comparison (constant time), and after 5 the code is burned. Wrong, used, burned or expired codes
+  and unknown emails all get `400` "Código inválido o vencido." (pinned on `code`); password policy
+  problems are the usual field errors. Success sets the password and `password_changed_at` (every
+  session ends; no auto-login) and sends "✅ Tu contraseña se cambió…" to the same chats.
+- `password_reset_codes`: `user_id` → `users` CASCADE, `code_hash` (HMAC-SHA-256 hex with
+  `JWT_SECRET`, user id included), `channel` varchar(20) (`telegram`/`email`), `expires_at` (+10 min),
+  `attempts`, `used_at`, `created_at`, `requester_ip` varchar(64).
+- The bot's `/micuenta` shows the panel account that linked the chat (name, email, role, active);
+  unlinked chats get the usual private-bot reply.
+
+Tests: `test/password-reset.e2e-spec.ts` (fake Bot API), `src/auth/password-reset/reset-code.spec.ts`.
+
 ## Admin users and roles
 
 There is **no public registration**. Every route requires a valid session unless it is marked
-`@Public()`; admin routes add `@Roles(...)`.
+`@Public()`; admin routes add `@Roles(...)`. `ADMIN` can do everything; `EDITOR` manages
+products, orders and content but cannot delete products or categories, cancel orders, or open
+Catálogos, Telegram and Usuarios.
 
-- The seed creates (or updates) an `ADMIN` user from `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`
-  and `SEED_ADMIN_NAME`. Re-running the seed resets that user's password and name.
-- To add another admin, change the `SEED_ADMIN_*` values and run `npm run db:seed` again (the
-  previous admin is kept). Editing `users` by hand in DBeaver/pgAdmin also works, but
-  `password_hash` must be an argon2 hash, so the seed is the easier path.
-- `EDITOR` users can manage products, images and categories but cannot delete products or
-  categories. Change a user's role by updating `users.role` (`ADMIN` / `EDITOR`) in DBeaver or
-  pgAdmin.
+Accounts are managed from the admin (**Usuarios**, code in `src/users`). The seed only creates
+the first `ADMIN` from `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` and `SEED_ADMIN_NAME`.
+Re-running it resets that user's password and name, makes it an active `ADMIN` again (the way
+back in if every admin is locked out) and, since the password changed, closes its sessions.
+
+**Table** (migration `1790900000000-AdminUserManagement`): `users.is_active` (default true),
+`users.password_changed_at` and `users.last_login_at` (timestamptz, nullable), and
+`users_email_lower_key`, a unique index on `lower(email)`: emails are unique ignoring case (the
+API also stores them lowercase).
+
+**Sessions.** `JwtAuthGuard` re-reads the user on every request: a deactivated user gets `401`
+at once, a role change applies at once, and a token whose `iat` (whole seconds) is before
+`password_changed_at` is rejected ("Tu contraseña cambió…"). A password change is stamped at
+the next whole second (`passwordChangeInstant` in `src/auth/session.config.ts`), so every token
+signed so far, even in the same second, is older; the session that made the change gets a new
+token dated at that instant (up to one second ahead), so it survives.
+
+**Password policy** (`src/auth/password-policy.ts`, same in the front): 10–200 characters, at
+least one letter and one number, Spanish messages. Only argon2 hashes are stored; no endpoint
+returns them.
+
+**No hard delete.** Users are deactivated instead, so orders, notes, status history and
+Telegram approvals keep their author. Deactivating also switches off the Telegram chats the user
+linked (`telegram_chats.linked_by_user_id`) and burns their unused link codes, so a former
+employee stops receiving payment data. The bot treats a chat linked by a deactivated user as
+unlinked (the "private bot" reply, and writing to it does not reactivate it) until an active
+admin links it again. Reactivating the user does not switch the chats back on: each comes back
+when it writes to the bot again.
+
+**Safety rules** (`409` in Spanish): an admin cannot change their own role, deactivate
+themselves or reset their own password here (that is "Mi cuenta"); at least one active `ADMIN`
+must always remain (checked under a transaction-scoped advisory lock, so two admins acting at
+once cannot both win); a taken email (any case).
+
+Endpoints (ADMIN only, under `/admin/users`):
+
+- `GET /admin/users?search&page&pageSize` (search: name or email, case-insensitive; `pageSize`
+  default 20, max 100) → `Paginated<{ id, name, email, role, isActive, createdAt, updatedAt,
+lastLoginAt, passwordChangedAt, telegramChatCount, activeTelegramChatCount }>`
+- `GET /admin/users/:id`
+- `POST /admin/users` `{ name, email, role, password }` → `201` with the user
+- `PATCH /admin/users/:id` `{ name?, email?, role? }`
+- `POST /admin/users/:id/password` `{ password }` → `204`; closes every session of that user
+- `PATCH /admin/users/:id/active` `{ isActive }` → the user plus `telegramChatsDeactivated`
+
+Tests: `test/admin-users.e2e-spec.ts` (in-memory users table, `test/fixtures/fake-users-db.ts`),
+`src/auth/password-policy.spec.ts`, `src/auth/session.config.spec.ts` and
+`src/auth/auth.service.spec.ts`.

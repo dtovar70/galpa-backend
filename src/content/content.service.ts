@@ -7,12 +7,14 @@ import {
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { BanksService } from '../catalogs/banks.service.js'
+import { MobilePrefixesService } from '../catalogs/mobile-prefixes.service.js'
 import { createValidationPipe } from '../common/pipes/validation.pipe.js'
 import type { AuthUser } from '../common/types/auth-user.js'
 import { DEFAULT_SITE_CONTENT } from './content.defaults.js'
 import {
     CONTENT_SECTIONS,
     isContentSection,
+    type ContactContent,
     type ContentSection,
     type PaymentContent,
     type SiteContent,
@@ -74,6 +76,7 @@ export class ContentService {
         @InjectRepository(SiteContentEntry)
         private readonly entries: Repository<SiteContentEntry>,
         private readonly banks: BanksService,
+        private readonly mobilePrefixes: MobilePrefixesService,
     ) {}
 
     /** Every section, stored values merged over the defaults. */
@@ -106,7 +109,7 @@ export class ContentService {
             type: 'body',
             metatype: CONTENT_SECTION_DTOS[key],
         })
-        if (key === 'payment') await this.checkPaymentBank(dto as PaymentContent)
+        await this.checkCatalogFields(key, dto)
 
         // One atomic upsert: two admins saving at once can never collide on the primary key.
         await this.entries.query(
@@ -131,20 +134,35 @@ export class ContentService {
     }
 
     /**
-     * The Pago Móvil bank must be an active bank of the `banks` catalog; its name is taken from
-     * the catalog, so the details the customer copies always match the bank list.
+     * Fields that must match a catalog, after the DTO: the Pago Móvil bank must be an active bank
+     * of `banks` (its name is taken from the catalog, so the details the customer copies always
+     * match the bank list), and the Pago Móvil phone and the contact WhatsApp need an active
+     * operator code of `mobile_prefixes`. All problems are reported together.
      */
-    private async checkPaymentBank(payment: PaymentContent): Promise<void> {
-        const bank = await this.banks.findActive(payment.bankCode)
-        if (!bank) {
+    private async checkCatalogFields(section: ContentSection, dto: object): Promise<void> {
+        const details: { field: string; errors: string[] }[] = []
+        const checkPhone = async (field: string, phone: string) => {
+            const problem = await this.mobilePrefixes.phoneProblem(phone)
+            if (problem) details.push({ field, errors: [problem] })
+        }
+
+        if (section === 'payment') {
+            const payment = dto as PaymentContent
+            const bank = await this.banks.findActive(payment.bankCode)
+            if (bank) payment.bankName = bank.name
+            else details.push({ field: 'bankCode', errors: ['Elige un banco de la lista.'] })
+            await checkPhone('phone', payment.phone)
+        }
+        if (section === 'contact') await checkPhone('whatsapp', (dto as ContactContent).whatsapp)
+
+        if (details.length) {
             throw new BadRequestException({
                 statusCode: 400,
                 error: 'Bad Request',
                 message: 'Los datos enviados no son válidos. Revisa los campos marcados.',
-                details: [{ field: 'bankCode', errors: ['Elige un banco de la lista.'] }],
+                details,
             })
         }
-        payment.bankName = bank.name
     }
 
     private assertSection(section: string): ContentSection {

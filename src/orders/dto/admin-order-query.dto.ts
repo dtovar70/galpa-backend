@@ -30,7 +30,7 @@ const FIELD = {
     pageSize: masculine('El tamaño de página'),
 } as const
 
-export const ADMIN_ORDERS_PAGE_SIZE = 20
+export const ADMIN_ORDERS_PAGE_SIZE = 10
 export const ADMIN_ORDERS_MAX_PAGE_SIZE = 100
 
 const emptyToUndefined = ({ value }: { value: unknown }): unknown =>

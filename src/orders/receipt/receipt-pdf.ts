@@ -6,6 +6,8 @@ import { formatBs, formatUsd, formatVeNumber } from '../../common/utils/money-fo
 
 /** Everything printed on the receipt, already resolved (labels, Caracas dates as text). */
 export interface ReceiptData {
+    /** PNG of the QR to the customer's order page; null or missing prints no QR. */
+    orderQr?: Buffer | null
     brandName: string
     tagline: string
     contact: { phone: string; whatsapp: string; email: string; city: string; instagram: string }
@@ -157,6 +159,7 @@ class ReceiptLayout {
         this.parties()
         this.itemsTable()
         this.totalsAndPayment()
+        this.trackingQr()
         this.footers()
     }
 
@@ -485,6 +488,49 @@ class ReceiptLayout {
             lineBreak: false,
         })
         doc.y = top + blockHeight + 18
+    }
+
+    /**
+     * "Escanea para ver el estado de tu pedido": a small card under the totals with the QR of
+     * the customer's private order link (about 76 pt, black on white, quiet zone included).
+     */
+    private trackingQr(): void {
+        const { doc, data, left, width } = this
+        if (!data.orderQr) return
+        const cardWidth = 228
+        const cardHeight = 92
+        const qrSize = 76
+        this.ensureSpace(cardHeight + 8)
+        const top = doc.y - 4
+        const x = left + width - cardWidth
+        doc.roundedRect(x, top, cardWidth, cardHeight, 8)
+            .lineWidth(1)
+            .strokeColor(COLOR.blushStrong)
+            .stroke()
+        // The PNG carries its own white quiet zone; the card only frames it.
+        doc.image(data.orderQr, x + 8, top + (cardHeight - qrSize) / 2, {
+            width: qrSize,
+            height: qrSize,
+        })
+        const textLeft = x + 8 + qrSize + 8
+        const textWidth = cardWidth - (textLeft - x) - 10
+        this.font('display', 11, COLOR.pinkDark).text('Sigue tu pedido', textLeft, top + 16, {
+            width: textWidth,
+            lineBreak: false,
+        })
+        this.font('semibold', 8.5, COLOR.ink).text(
+            'Escanea para ver el estado de tu pedido',
+            textLeft,
+            top + 33,
+            { width: textWidth },
+        )
+        this.font('regular', 7.5, COLOR.soft).text(
+            'Es tu enlace privado: no lo compartas.',
+            textLeft,
+            doc.y + 4,
+            { width: textWidth },
+        )
+        doc.y = top + cardHeight + 18
     }
 
     /** Disclaimer, contact and page number at the bottom of every page. */

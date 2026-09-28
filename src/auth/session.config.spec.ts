@@ -1,6 +1,9 @@
 import {
+    issuedBeforePasswordChange,
+    passwordChangeInstant,
     resolveSessionSettings,
     SESSION_EXPIRY_MARGIN_SECONDS,
+    sessionIssuedAt,
     tokenLifetime,
 } from './session.config.js'
 
@@ -35,5 +38,43 @@ describe('session config', () => {
     it('rejects tokens without iat/exp', () => {
         expect(tokenLifetime({ sub: 'u1', role: 'ADMIN' }, 1950)).toBeNull()
         expect(tokenLifetime({ sub: 'u1', role: 'ADMIN', iat: 1 }, 1950)).toBeNull()
+    })
+})
+
+describe('password change vs. token iat (whole seconds)', () => {
+    it('takes effect at the next whole second, after every token signed so far', () => {
+        expect(passwordChangeInstant(new Date('2026-09-25T12:00:00.999Z'))).toEqual(
+            new Date('2026-09-25T12:00:01.000Z'),
+        )
+        // Exactly on a second boundary it still moves forward: a token signed in this very
+        // second (iat = 12:00:00) must die.
+        expect(passwordChangeInstant(new Date('2026-09-25T12:00:00.000Z'))).toEqual(
+            new Date('2026-09-25T12:00:01.000Z'),
+        )
+    })
+
+    it('rejects tokens issued before the change, including earlier in the same second', () => {
+        const now = new Date('2026-09-25T12:00:00.400Z')
+        const changedAt = passwordChangeInstant(now)
+        const signedThisSecond = Math.floor(now.getTime() / 1000)
+        expect(issuedBeforePasswordChange(signedThisSecond, changedAt)).toBe(true)
+        expect(issuedBeforePasswordChange(signedThisSecond - 60, changedAt)).toBe(true)
+        expect(issuedBeforePasswordChange(signedThisSecond + 1, changedAt)).toBe(false)
+        expect(issuedBeforePasswordChange(signedThisSecond, null)).toBe(false)
+    })
+
+    it('dates new tokens at the change when it is still ahead, so they survive it', () => {
+        const nowMs = Date.parse('2026-09-25T12:00:00.400Z')
+        const changedAt = passwordChangeInstant(new Date(nowMs))
+        const iat = sessionIssuedAt(changedAt, nowMs)
+        expect(iat).toBe(changedAt.getTime() / 1000)
+        expect(issuedBeforePasswordChange(iat, changedAt)).toBe(false)
+        // Later on, tokens simply use the current time.
+        expect(sessionIssuedAt(changedAt, nowMs + 5_000)).toBe(Math.floor((nowMs + 5_000) / 1000))
+        expect(sessionIssuedAt(null, nowMs)).toBe(Math.floor(nowMs / 1000))
+        // A change stored with milliseconds (e.g. edited by hand) rounds up, never down.
+        const handEdited = new Date('2026-09-25T12:00:02.300Z')
+        const bumped = sessionIssuedAt(handEdited, nowMs)
+        expect(issuedBeforePasswordChange(bumped, handEdited)).toBe(false)
     })
 })

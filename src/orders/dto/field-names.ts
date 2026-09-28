@@ -1,4 +1,5 @@
 import { feminine, masculine } from '../../common/validation/messages.js'
+import { ID_NUMBER_PATTERN, VE_MOBILE_PATTERN } from '../../common/validation/ve-formats.js'
 
 /** Spanish names of the order fields, used to build validation messages. */
 export const ORDER_FIELD = {
@@ -45,12 +46,15 @@ export const ORDER_LIMITS = {
     refundReference: 60,
 } as const
 
-/** Same shape the checkout form accepts: digits, spaces, "+", "(", ")" and "-". */
-export const CUSTOMER_PHONE_PATTERN = /^[\d+\s()-]{7,20}$/
-/** Pago Móvil phone: "0412-5550134". */
-export const PAYER_PHONE_PATTERN = /^04\d{2}-\d{7}$/
-/** Cédula: "V-12345678" / "E-1234567" (RIF prefixes accepted as well). */
-export const PAYER_ID_PATTERN = /^[VEJPG]-\d{6,9}$/
+/**
+ * Checkout phone: a Venezuelan mobile ("0424-1234567"), since the order notices go out by
+ * WhatsApp. The operator code must also be active in `mobile_prefixes` (checked by the service).
+ */
+export const CUSTOMER_PHONE_PATTERN = VE_MOBILE_PATTERN
+/** Pago Móvil phone: "0412-5550134" (same rule as the checkout phone). */
+export const PAYER_PHONE_PATTERN = VE_MOBILE_PATTERN
+/** Cédula or RIF of the payer: "V-12345678", "J-123456789". */
+export const PAYER_ID_PATTERN = ID_NUMBER_PATTERN
 export const REFERENCE_PATTERN = /^\d{4,20}$/
 export const ORDER_CODE_PATTERN = /^MR-\d{6,}$/
 export const MAX_AMOUNT_BS = 9_999_999_999.99

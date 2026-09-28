@@ -9,13 +9,20 @@ import type { AuthenticatedRequest, JwtClaims } from '../../common/types/auth-us
 import type { Env } from '../../config/env.schema.js'
 import { SESSION_COOKIE, toAuthUser } from '../auth.constants.js'
 import { User } from '../entities/user.entity.js'
-import { sessionSettingsFrom, tokenLifetime } from '../session.config.js'
+import {
+    issuedBeforePasswordChange,
+    sessionSettingsFrom,
+    tokenLifetime,
+} from '../session.config.js'
 
 const INVALID_SESSION = 'Tu sesión expiró o no es válida. Inicia sesión de nuevo.'
+const SESSION_REVOKED = 'Tu sesión ya no es válida. Inicia sesión de nuevo.'
+const PASSWORD_CHANGED = 'Tu contraseña cambió. Inicia sesión de nuevo con la nueva contraseña.'
 
 /**
  * Global guard: every route requires a valid `mr_session` cookie unless marked @Public().
- * The user is re-read from the database so deleted users / role changes apply immediately.
+ * The user is re-read from the database on every request, so a deactivation, a role change
+ * or a password change (which rejects older tokens) applies immediately.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -54,13 +61,16 @@ export class JwtAuthGuard implements CanActivate {
         // Tokens longer than the configured lifetime (e.g. issued before the idle timeout
         // existed) would bypass it, so they are rejected like expired ones.
         const lifetime = tokenLifetime(claims, this.ttlSeconds)
-        if (!lifetime) {
+        if (!lifetime || claims.iat === undefined) {
             throw new UnauthorizedException(INVALID_SESSION)
         }
 
         const user = await this.users.findOneBy({ id: claims.sub })
-        if (!user) {
-            throw new UnauthorizedException('Tu sesión ya no es válida. Inicia sesión de nuevo.')
+        if (!user || !user.isActive) {
+            throw new UnauthorizedException(SESSION_REVOKED)
+        }
+        if (issuedBeforePasswordChange(claims.iat, user.passwordChangedAt ?? null)) {
+            throw new UnauthorizedException(PASSWORD_CHANGED)
         }
 
         request.user = toAuthUser(user)

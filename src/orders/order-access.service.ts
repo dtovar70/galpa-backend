@@ -18,6 +18,16 @@ export interface IssuedAccessLink {
     createdAt: string
 }
 
+/** How long an admin-issued link may be reused for another admin receipt download. */
+export const ADMIN_LINK_REUSE_MS = 24 * 60 * 60_000
+const MAX_REMEMBERED_LINKS = 500
+
+interface RememberedLink {
+    linkId: string
+    token: string
+    createdAt: Date
+}
+
 /**
  * The customer's private links (`order_access_links`). An order may have several: checkout
  * issues the first, the admin issues new ones to send by WhatsApp. Any link that is not revoked
@@ -27,6 +37,12 @@ export interface IssuedAccessLink {
 export class OrderAccessService {
     private readonly siteUrl: string
     private readonly apiUrl: string
+    /**
+     * The newest admin-issued link per order id, raw token included. Only the hash is stored in
+     * the database, so this in-memory copy is the only way to reuse a link; it is lost on
+     * restart (the next admin receipt then issues a new link) and never written anywhere.
+     */
+    private readonly adminLinks = new Map<string, RememberedLink>()
 
     constructor(
         @InjectDataSource() private readonly dataSource: DataSource,
@@ -58,15 +74,45 @@ export class OrderAccessService {
     ): Promise<IssuedAccessLink> {
         const { token, hash } = generateAccessToken()
         const createdAt = new Date()
+        const id = newId()
         await manager.insert(OrderAccessLink, {
-            id: newId(),
+            id,
             orderId,
             tokenHash: hash,
             createdById,
             createdAt,
             revokedAt: null,
         })
+        if (createdById) this.rememberAdminLink(orderId, { linkId: id, token, createdAt })
         return { token, url: this.customerUrl(code, token), createdAt: createdAt.toISOString() }
+    }
+
+    private rememberAdminLink(orderId: string, link: RememberedLink): void {
+        this.adminLinks.delete(orderId)
+        this.adminLinks.set(orderId, link)
+        // Oldest first (insertion order): keep the map small.
+        while (this.adminLinks.size > MAX_REMEMBERED_LINKS) {
+            const oldest = this.adminLinks.keys().next().value
+            if (oldest === undefined) break
+            this.adminLinks.delete(oldest)
+        }
+    }
+
+    /**
+     * The customer link printed as a QR on the admin's receipt. Reuses the newest admin-issued
+     * link of the order from the last 24 hours when this process still holds its token (and the
+     * link is not revoked); otherwise issues a new one on behalf of `userId`.
+     */
+    async linkForAdminReceipt(orderId: string, code: string, userId: string): Promise<string> {
+        const remembered = this.adminLinks.get(orderId)
+        if (remembered && Date.now() - remembered.createdAt.getTime() < ADMIN_LINK_REUSE_MS) {
+            const live = await this.dataSource.getRepository(OrderAccessLink).findOne({
+                where: { id: remembered.linkId, revokedAt: IsNull() },
+                select: { id: true },
+            })
+            if (live) return this.customerUrl(code, remembered.token)
+        }
+        return (await this.issue(orderId, code, userId)).url
     }
 
     /** Issues a link for the order `code` (admin endpoint). 404 for an unknown order. */

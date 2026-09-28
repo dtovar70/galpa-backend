@@ -23,4 +23,7 @@ export const CATALOG_FIELD = {
     bankName: masculine('El nombre del banco'),
     isActive: masculine('El estado del banco'),
     bankCodes: feminine('La lista de bancos'),
+    mobilePrefixCode: masculine('El código de celular'),
+    mobilePrefixActive: masculine('El estado del código'),
+    mobilePrefixCodes: feminine('La lista de códigos'),
 } as const

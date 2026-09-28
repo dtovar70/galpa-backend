@@ -7,6 +7,7 @@ import { RATE_SOURCE_LABELS } from '../../exchange-rate/providers/rate-provider.
 import { Order } from '../entities/order.entity.js'
 import { OrderAccessService } from '../order-access.service.js'
 import { ORDER_NOT_FOUND } from '../order-status.service.js'
+import { orderQrPng } from '../qr/order-qr.js'
 import { verifiedPayment } from './receipt-availability.js'
 import { renderReceiptPdf, type ReceiptData } from './receipt-pdf.js'
 
@@ -53,16 +54,29 @@ export class ReceiptService {
         private readonly content: ContentService,
     ) {}
 
+    /** The QR points at the same link (token) the customer used to download it. */
     async forCustomer(code: string, token: string | undefined): Promise<ReceiptFile> {
         const order = await this.access.findAuthorized(code, token)
-        return this.render(order.code)
+        return this.render(order.code, () =>
+            Promise.resolve(this.access.customerUrl(order.code, token as string)),
+        )
     }
 
-    forAdmin(code: string): Promise<ReceiptFile> {
-        return this.render(code)
+    /**
+     * The QR needs a customer link: an admin-issued one from the last 24 hours is reused when
+     * possible, otherwise a new one is issued on behalf of `userId` (only once the receipt is
+     * known to be available, so a 409 never leaves a stray link behind).
+     */
+    forAdmin(code: string, userId: string): Promise<ReceiptFile> {
+        return this.render(code, (order) =>
+            this.access.linkForAdminReceipt(order.id, order.code, userId),
+        )
     }
 
-    private async render(code: string): Promise<ReceiptFile> {
+    private async render(
+        code: string,
+        linkFor: (order: Order) => Promise<string>,
+    ): Promise<ReceiptFile> {
         const order = await this.dataSource.getRepository(Order).findOne({
             where: { code },
             relations: { items: true, payments: true },
@@ -74,7 +88,9 @@ export class ReceiptService {
         if (!payment) throw new ConflictException(RECEIPT_NOT_AVAILABLE)
 
         const [content, label] = await Promise.all([this.content.getAll(), this.catalog.labeler()])
+        const orderQr = await orderQrPng(await linkFor(order), 360)
         const data: ReceiptData = {
+            orderQr,
             brandName: content.general.brandName,
             tagline: content.general.tagline,
             contact: {

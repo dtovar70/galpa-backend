@@ -1,5 +1,7 @@
+import { PasswordResetCode } from '../auth/entities/password-reset-code.entity.js'
 import { User } from '../auth/entities/user.entity.js'
 import { Bank } from '../catalogs/entities/bank.entity.js'
+import { MobilePrefix } from '../catalogs/entities/mobile-prefix.entity.js'
 import { OrderStatusDefinition } from '../catalogs/entities/order-status-definition.entity.js'
 import { OrderStatusGroup } from '../catalogs/entities/order-status-group.entity.js'
 import { Category } from '../categories/entities/category.entity.js'
@@ -14,6 +16,9 @@ import { Order } from '../orders/entities/order.entity.js'
 import { ProductImage } from '../products/entities/product-image.entity.js'
 import { ProductVariant } from '../products/entities/product-variant.entity.js'
 import { Product } from '../products/entities/product.entity.js'
+import { TelegramChat } from '../telegram/entities/telegram-chat.entity.js'
+import { TelegramLinkCode } from '../telegram/entities/telegram-link-code.entity.js'
+import { TelegramMessage } from '../telegram/entities/telegram-message.entity.js'
 
 /** Every entity, shared by the Nest app and the CLI DataSource. */
 export const ENTITIES = [
@@ -33,4 +38,9 @@ export const ENTITIES = [
     OrderStatusGroup,
     OrderStatusDefinition,
     Bank,
+    MobilePrefix,
+    TelegramChat,
+    TelegramLinkCode,
+    TelegramMessage,
+    PasswordResetCode,
 ]

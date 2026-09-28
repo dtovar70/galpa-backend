@@ -15,10 +15,19 @@ import { Public } from '../common/decorators/public.decorator.js'
 import { Roles } from '../common/decorators/roles.decorator.js'
 import { BANK_ORDER_ROUTE, BanksService, type AdminBankDto, type BankDto } from './banks.service.js'
 import { CreateBankDto } from './dto/create-bank.dto.js'
+import { CreateMobilePrefixDto } from './dto/create-mobile-prefix.dto.js'
 import { ReorderBanksDto } from './dto/reorder-banks.dto.js'
+import { ReorderMobilePrefixesDto } from './dto/reorder-mobile-prefixes.dto.js'
 import { UpdateBankDto } from './dto/update-bank.dto.js'
+import { UpdateMobilePrefixDto } from './dto/update-mobile-prefix.dto.js'
 import { UpdateOrderStatusGroupDto } from './dto/update-order-status-group.dto.js'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto.js'
+import {
+    MOBILE_PREFIX_ORDER_ROUTE,
+    MobilePrefixesService,
+    type AdminMobilePrefixDto,
+    type MobilePrefixDto,
+} from './mobile-prefixes.service.js'
 import {
     OrderStatusCatalogService,
     type AdminOrderStatusCatalogDto,
@@ -35,6 +44,7 @@ export class CatalogsController {
     constructor(
         private readonly orderStatuses: OrderStatusCatalogService,
         private readonly banks: BanksService,
+        private readonly mobilePrefixes: MobilePrefixesService,
     ) {}
 
     /** Labels, customer copy, badge tones and tabs of the order statuses. */
@@ -50,6 +60,13 @@ export class CatalogsController {
     getBanks(): Promise<BankDto[]> {
         return this.banks.listActive()
     }
+
+    /** Active mobile operator codes ("0424"), in select order. */
+    @Get('mobile-prefixes')
+    @Header('Cache-Control', 'no-cache')
+    getMobilePrefixes(): Promise<MobilePrefixDto[]> {
+        return this.mobilePrefixes.listActive()
+    }
 }
 
 /**
@@ -62,6 +79,7 @@ export class AdminCatalogsController {
     constructor(
         private readonly orderStatuses: OrderStatusCatalogService,
         private readonly banks: BanksService,
+        private readonly mobilePrefixes: MobilePrefixesService,
     ) {}
 
     @Get('order-statuses')
@@ -114,5 +132,37 @@ export class AdminCatalogsController {
     @HttpCode(HttpStatus.NO_CONTENT)
     removeBank(@Param('code') code: string): Promise<void> {
         return this.banks.remove(code)
+    }
+
+    @Get('mobile-prefixes')
+    @Header('Cache-Control', 'no-store')
+    listMobilePrefixes(): Promise<AdminMobilePrefixDto[]> {
+        return this.mobilePrefixes.listForAdmin()
+    }
+
+    @Post('mobile-prefixes')
+    createMobilePrefix(@Body() dto: CreateMobilePrefixDto): Promise<AdminMobilePrefixDto> {
+        return this.mobilePrefixes.create(dto)
+    }
+
+    /** Declared before `PATCH mobile-prefixes/:code` so "order" is never taken for a code. */
+    @Patch(`mobile-prefixes/${MOBILE_PREFIX_ORDER_ROUTE}`)
+    reorderMobilePrefixes(@Body() dto: ReorderMobilePrefixesDto): Promise<AdminMobilePrefixDto[]> {
+        return this.mobilePrefixes.reorder(dto.codes)
+    }
+
+    @Patch('mobile-prefixes/:code')
+    updateMobilePrefix(
+        @Param('code') code: string,
+        @Body() dto: UpdateMobilePrefixDto,
+    ): Promise<AdminMobilePrefixDto> {
+        return this.mobilePrefixes.update(code, dto)
+    }
+
+    /** `409` while an order in progress or the store content uses the code: deactivate it. */
+    @Delete('mobile-prefixes/:code')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    removeMobilePrefix(@Param('code') code: string): Promise<void> {
+        return this.mobilePrefixes.remove(code)
     }
 }
