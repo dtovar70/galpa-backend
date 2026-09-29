@@ -1,4 +1,4 @@
-/** Every way a reset code can travel. Phase 5 adds `email`. */
+/** Every way a reset code can travel. */
 export const PASSWORD_RESET_CHANNELS = ['telegram', 'email'] as const
 export type PasswordResetChannelId = (typeof PASSWORD_RESET_CHANNELS)[number]
 
@@ -12,8 +12,8 @@ export interface PasswordResetRecipient {
 /**
  * A way to deliver password reset codes. The flow (codes, attempts, expiry, the password
  * change) lives in `PasswordResetService`; a channel only knows whether it can reach a user and
- * how to send them the two messages. Adding email means adding a channel to
- * `PASSWORD_RESET_CHANNEL_LIST`, nothing else.
+ * how to send them the two messages. A new channel only needs adding to
+ * `PASSWORD_RESET_CHANNEL_LIST`.
  */
 export interface PasswordResetChannel {
     readonly id: PasswordResetChannelId

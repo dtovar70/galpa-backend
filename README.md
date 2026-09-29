@@ -5,6 +5,7 @@ Phase 1: admin auth with roles, products/categories CRUD, image uploads.
 Phase 2: editable site content (texts and business data) edited from the admin.
 Phase 3: guest orders, the BCV exchange rate and Pago Móvil payments verified by hand.
 Phase 4: a Telegram bot that sends each payment to the owner and lets her confirm or reject it.
+Phase 5: customer emails ("Pedido recibido", "Consultar mi pedido") and password reset by email.
 
 ## Prerequisites
 
@@ -16,7 +17,7 @@ Phase 4: a Telegram bot that sends each payment to the owner and lets her confir
 ```bash
 npm install
 cp .env.example .env        # then set JWT_SECRET and SEED_ADMIN_PASSWORD
-npm run db:up               # starts postgres:17 (docker compose)
+npm run db:up               # starts postgres:17 and Mailpit (docker compose)
 npm run db:migrate          # runs pending TypeORM migrations (src/database/migrations)
 npm run db:seed             # admin user + categories + products from the frontend mocks
 npm run start:dev           # http://localhost:3000/api
@@ -374,6 +375,9 @@ Public (write routes throttled to 10 per 10 minutes per IP):
 - `GET /orders/:code/receipt.pdf?t=` → the purchase receipt (`attachment;
 filename="comprobante-MR-000012.pdf"`, 20 per 10 minutes per IP; `404` with a bad token, `409`
   before the payment is verified or once cancelled)
+- `POST /orders/lookup` `{ code, email }` ("Consultar mi pedido"; 5 per 15 minutes per IP, 3 per
+  email and 3 per code, `429` past that) → always `202 { message: "Si los datos coinciden, te
+enviamos un enlace a tu correo." }`. See [Email](#email)
 - `POST /orders/:code/payment?t=` (multipart: `reference`, `payerBankCode` (an active bank of
   `banks`), `payerPhone`,
   `payerIdNumber?`, `paidOn`, `amountBs`, file `proof?` JPG/PNG/WEBP up to 5 MB, content-sniffed)
@@ -486,28 +490,84 @@ API (`test/fixtures/fake-telegram.ts`): nothing reaches Telegram.
 
 **Password recovery** (`src/auth/password-reset`, migration `1791100000000-PasswordResetCodes`).
 Panel users who forgot their password get a one-time 6-digit code through a delivery channel
-(`PasswordResetChannel`; today only `TelegramPasswordResetChannel`, email is Phase 5: add it to the
-`PASSWORD_RESET_CHANNEL_LIST` factory in `password-reset.module.ts`, the flow does not change).
+(`PasswordResetChannel`, listed in order of preference in the `PASSWORD_RESET_CHANNEL_LIST` factory
+of `password-reset.module.ts`): `TelegramPasswordResetChannel` first, then
+`EmailPasswordResetChannel` as the fallback. The first channel that can reach the user wins.
 
 - `POST /auth/password-reset/request` `{ email }` (public; 3 per 15 minutes per IP and per email,
   `429` past that) → always `202 { message }` with the same text. The work runs after the
-  response (so its time does not depend on the account): only an **active** user with at least one
-  **active** chat they linked (`telegram_chats.linked_by_user_id`) gets a code, sent to all those
-  chats ("🔐 Código para restablecer tu contraseña…", `protect_content`). Their older unused codes
-  expire. Unknown email, inactive user, no chat, bot off: nothing is sent and it is only logged.
+  response (so its time does not depend on the account). Only an **active** user gets a code: by
+  Telegram when they have at least one **active** chat they linked
+  (`telegram_chats.linked_by_user_id`), sent to all those chats ("🔐 Código para restablecer tu
+  contraseña…", `protect_content`); otherwise by email to the account's address ("Tu código para
+  restablecer la contraseña") when mail is on (`MAIL_DRIVER` `smtp` or `resend`; with `log` the
+  email channel never claims a user). Their older unused codes expire. Unknown email, inactive
+  user, no channel: nothing is sent and it is only logged.
 - `POST /auth/password-reset/confirm` `{ email, code, newPassword }` (public, 10 per 15 minutes per
   IP) → `204`. Only the newest live code counts; every attempt is counted atomically before the
   comparison (constant time), and after 5 the code is burned. Wrong, used, burned or expired codes
   and unknown emails all get `400` "Código inválido o vencido." (pinned on `code`); password policy
   problems are the usual field errors. Success sets the password and `password_changed_at` (every
-  session ends; no auto-login) and sends "✅ Tu contraseña se cambió…" to the same chats.
+  session ends; no auto-login) and sends "Tu contraseña se cambió" through the channel that
+  carried the code (the same chats, or the same email).
 - `password_reset_codes`: `user_id` → `users` CASCADE, `code_hash` (HMAC-SHA-256 hex with
   `JWT_SECRET`, user id included), `channel` varchar(20) (`telegram`/`email`), `expires_at` (+10 min),
   `attempts`, `used_at`, `created_at`, `requester_ip` varchar(64).
 - The bot's `/micuenta` shows the panel account that linked the chat (name, email, role, active);
   unlinked chats get the usual private-bot reply.
 
-Tests: `test/password-reset.e2e-spec.ts` (fake Bot API), `src/auth/password-reset/reset-code.spec.ts`.
+Tests: `test/password-reset.e2e-spec.ts` (fake Bot API and a fake mail transport),
+`src/auth/password-reset/reset-code.spec.ts`.
+
+## Email
+
+Code in `src/mail` (`MailService.send({ to, subject, html, text }, context)` and the shared
+layout `email-layout.ts`); order emails in `src/orders/emails`. `send` never throws: a failure is
+logged with its context (order code or user id, never the address or the body) and returns
+`false`, so an outage never fails an order or a password reset.
+
+| `MAIL_DRIVER`   | What happens                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| `log` (default) | Nothing is sent. Only the masked recipient and the subject are logged. Order emails are skipped      |
+| `smtp`          | Any SMTP server: Mailpit in development (`SMTP_HOST`, `SMTP_PORT`; `SMTP_USER`/`SMTP_PASS` optional) |
+| `resend`        | Resend's HTTP API (`POST https://api.resend.com/emails`, `Authorization: Bearer RESEND_API_KEY`)     |
+
+`MAIL_FROM` ("Manada Russo Creativa <pedidos@tudominio.com>") is required by `smtp` and `resend`
+(on Resend it must be on a verified domain); `MAIL_REPLY_TO` is optional (customers' replies go
+there). The startup validation lists any missing variable. Under `NODE_ENV=test` the driver is
+always `log` (the e2e tests replace the `MAIL_TRANSPORT` provider with a fake).
+
+**Mailpit (development).** `npm run db:up` also starts Mailpit (`docker-compose.yml`, service
+`mailpit`; `docker compose up -d mailpit` starts only it). It catches every email: open
+<http://localhost:8025>. Set in `.env`:
+
+```dotenv
+MAIL_DRIVER=smtp
+MAIL_FROM="Manada Russo Creativa <pedidos@manadarusso.test>"
+SMTP_HOST=localhost
+SMTP_PORT=1025
+```
+
+Change the host ports with `MAILPIT_SMTP_PORT` / `MAILPIT_UI_PORT` (keep `SMTP_PORT` in sync).
+
+**Emails.** All in Spanish, table-based HTML with inline CSS plus a plain-text part, with the
+brand name and the contact data of the site content (email, WhatsApp, Instagram) in the footer.
+Every customer value is escaped.
+
+- **Pedido recibido** (`order.created`, `OrderEmailsListener`, after the commit): greeting, code,
+  items (variant, quantity, personalization), totals in USD and Bs with the stored rate, the Pago
+  Móvil data with the exact amount, the payment deadline in Caracas time, the delivery method and
+  address, a **Ver mi pedido** button and how to reach the shop (reply or WhatsApp). The button
+  carries a **new** private link (`order_access_links`, `created_by` null), never the checkout
+  token. It is the only automatic customer email for now.
+- **Consultar mi pedido** (`POST /orders/lookup` `{ code, email }`, `OrderLookupService`): the
+  answer is always the same `202` right away; in the background, when an order has that code and
+  that email (trimmed, case-insensitive) a fresh link is emailed to the order's address ("Tu
+  enlace para ver el pedido MR-…"). Rate limits: 5 per 15 minutes per IP (throttler), 3 per email
+  and 3 per code (in memory), `429` past that. With `MAIL_DRIVER=log` no link is issued.
+- **Password reset** codes and the "password changed" notice (see [Telegram bot](#telegram-bot)).
+
+Tests: `src/mail/*.spec.ts`, `src/orders/emails/*.spec.ts`, `test/order-emails.e2e-spec.ts`.
 
 ## Admin users and roles
 

@@ -72,10 +72,14 @@ export function buildCatalogConditions(filters: CatalogFilters): Condition[] {
     return [...conditions, ...buildSearchConditions(filters.search)]
 }
 
-/** Mirrors the comparators in the frontend mock; `id` is the final deterministic tie-breaker. */
+/**
+ * Mirrors the comparators in the frontend mock; `id` is the final deterministic tie-breaker.
+ * Relevance ties (same tags) show the newest product first.
+ */
 export const CATALOG_ORDER_BY: Record<SortOption, OrderBy> = {
     relevance: [
         [`${PRODUCT_ALIAS}.relevanceScore`, 'DESC'],
+        [`${PRODUCT_ALIAS}.createdAt`, 'DESC'],
         [`${PRODUCT_ALIAS}.id`, 'ASC'],
     ],
     'price-asc': [
@@ -88,11 +92,6 @@ export const CATALOG_ORDER_BY: Record<SortOption, OrderBy> = {
     ],
     newest: [
         [`${PRODUCT_ALIAS}.createdAt`, 'DESC'],
-        [`${PRODUCT_ALIAS}.id`, 'ASC'],
-    ],
-    rating: [
-        [`${PRODUCT_ALIAS}.rating`, 'DESC'],
-        [`${PRODUCT_ALIAS}.reviewCount`, 'DESC'],
         [`${PRODUCT_ALIAS}.id`, 'ASC'],
     ],
 }

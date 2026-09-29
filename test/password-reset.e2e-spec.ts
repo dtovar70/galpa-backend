@@ -8,6 +8,7 @@ import { PasswordResetCode } from '../src/auth/entities/password-reset-code.enti
 import { User } from '../src/auth/entities/user.entity.js'
 import type { PasswordResetService as PasswordResetServiceType } from '../src/auth/password-reset/password-reset.service.js'
 import { Role } from '../src/auth/role.enum.js'
+import { MAIL_TRANSPORT, type MailTransport, type OutgoingMail } from '../src/mail/mail.types.js'
 import { TelegramChat } from '../src/telegram/entities/telegram-chat.entity.js'
 import { FakeTelegramServer } from './fixtures/fake-telegram.js'
 import { FakeUsersDb, type Row } from './fixtures/fake-users-db.js'
@@ -22,11 +23,23 @@ const NEW_PASSWORD = 'Nueva-clave-2026'
 
 const REQUESTED = {
     message:
-        'Si el correo pertenece a una cuenta activa con Telegram vinculado, te enviamos un código de 6 dígitos a Telegram. Vence en 10 minutos.',
+        'Si el correo pertenece a una cuenta activa, te enviamos un código de 6 dígitos por Telegram (si lo tienes vinculado) o a tu correo. Vence en 10 minutos.',
 }
 const INVALID_CODE = 'Código inválido o vencido.'
 
 let hashes: Record<string, string>
+
+/** Catches emails. Off by default (like MAIL_DRIVER=log): the email channel then reaches no one. */
+class FakeMailTransport implements MailTransport {
+    readonly driver = 'smtp' as const
+    delivers = false
+    sent: OutgoingMail[] = []
+
+    send(message: OutgoingMail): Promise<void> {
+        this.sent.push(message)
+        return Promise.resolve()
+    }
+}
 
 function seed(db: FakeUsersDb): void {
     const created = new Date('2026-01-01T00:00:00Z')
@@ -67,7 +80,7 @@ function seed(db: FakeUsersDb): void {
 }
 
 /**
- * Admin password recovery through the Telegram bot: the real app (guards, throttler,
+ * Admin password recovery through the Telegram bot (and email as the fallback): the real app (guards, throttler,
  * validation, argon2, grammY) with the database in memory and a fake Bot API.
  */
 describe('Password reset by Telegram (e2e, fake Bot API)', () => {
@@ -75,6 +88,7 @@ describe('Password reset by Telegram (e2e, fake Bot API)', () => {
     let app: INestApplication
     let db: FakeUsersDb
     let resets: PasswordResetServiceType
+    let mail: FakeMailTransport
 
     const http = () => request(app.getHttpServer())
     const requestCode = (email: string) =>
@@ -130,6 +144,7 @@ describe('Password reset by Telegram (e2e, fake Bot API)', () => {
         db = new FakeUsersDb()
         seed(db)
         telegramServer.reset()
+        mail = new FakeMailTransport()
         // Imported here: the configuration is read when the module is loaded.
         const { AppModule } = await import('../src/app.module.js')
         const { createValidationPipe } = await import('../src/common/pipes/validation.pipe.js')
@@ -138,6 +153,8 @@ describe('Password reset by Telegram (e2e, fake Bot API)', () => {
         const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
             .overrideProvider(getDataSourceToken())
             .useValue(db.dataSource)
+            .overrideProvider(MAIL_TRANSPORT)
+            .useValue(mail)
             .compile()
         app = moduleFixture.createNestApplication()
         app.setGlobalPrefix('api')
@@ -273,5 +290,52 @@ describe('Password reset by Telegram (e2e, fake Bot API)', () => {
         for (const row of codes()) row.expiresAt = new Date(Date.now() - 1000)
         expect((await confirm(OWNER.email, second).expect(400)).body.message).toBe(INVALID_CODE)
         await login(OWNER.email, OWNER.password).expect(200)
+    })
+
+    describe('by email (the fallback after Telegram)', () => {
+        beforeEach(() => {
+            mail.delivers = true
+        })
+
+        const emailCode = (message: OutgoingMail | undefined): string => {
+            const code = /Código: (\d{6})/.exec(message?.text ?? '')?.[1]
+            if (!code) throw new Error('No code in the email')
+            return code
+        }
+
+        it('sends the code by email to a user without a chat, with the same answer', async () => {
+            const response = await requestCode(NO_CHAT.email.toUpperCase()).expect(202)
+            expect(response.body).toEqual(REQUESTED)
+            await resets.idle()
+
+            expect(sent()).toHaveLength(0)
+            expect(mail.sent).toHaveLength(1)
+            const message = mail.sent[0] as OutgoingMail
+            expect(message.to).toBe(NO_CHAT.email)
+            expect(message.subject).toBe('Tu código para restablecer la contraseña')
+            expect(message.text).toContain('Vence en 10 minutos')
+            expect(codes()[0]).toMatchObject({ userId: NO_CHAT.id, channel: 'email' })
+
+            await confirm(NO_CHAT.email, emailCode(message)).expect(204)
+            await login(NO_CHAT.email, NEW_PASSWORD).expect(200)
+            expect(mail.sent.at(-1)).toMatchObject({
+                to: NO_CHAT.email,
+                subject: 'Tu contraseña se cambió',
+            })
+        })
+
+        it('keeps Telegram first for a user with a chat', async () => {
+            await ownerCode()
+            expect(mail.sent).toHaveLength(0)
+            expect(codes()[0]).toMatchObject({ userId: OWNER.id, channel: 'telegram' })
+        })
+
+        it('never emails an inactive user or an unknown address', async () => {
+            await requestCode(INACTIVE.email).expect(202)
+            await requestCode('nadie@example.com').expect(202)
+            await resets.idle()
+            expect(mail.sent).toHaveLength(0)
+            expect(codes()).toHaveLength(0)
+        })
     })
 })

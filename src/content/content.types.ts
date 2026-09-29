@@ -81,6 +81,16 @@ export interface HomeStep {
     description: string
 }
 
+/** A real customer review shown on the home page. */
+export interface HomeTestimonial {
+    quote: string
+    name: string
+    /** Empty hides it. */
+    city: string
+    /** What the customer bought, free text. Empty hides it. */
+    product: string
+}
+
 export interface HomeContent {
     heroBadge: string
     /** Accepts *highlights*. */
@@ -103,13 +113,13 @@ export interface HomeContent {
     steps: HomeStep[]
     testimonialsEyebrow: string
     testimonialsTitle: string
+    /** Real reviews, in order. Empty hides the whole section. */
+    testimonials: HomeTestimonial[]
     ctaBadge: string
     ctaTitle: string
     ctaDescription: string
     ctaPrimary: string
     ctaSecondary: string
-    newsletterTitle: string
-    newsletterDescription: string
 }
 
 export interface AboutValue {

@@ -18,11 +18,17 @@ import { isPaymentConfigured, type PaymentContent } from '../content/content.typ
 import { newId } from '../database/id.js'
 import { ExchangeRateService } from '../exchange-rate/exchange-rate.service.js'
 import { ProductImage } from '../products/entities/product-image.entity.js'
-import { ProductVariant } from '../products/entities/product-variant.entity.js'
-import { Product } from '../products/entities/product.entity.js'
+import {
+    changeStock,
+    lockStock,
+    stockItemName,
+    stockUnitKey,
+    type LockedStock,
+} from '../products/product-stock.js'
 import { detectImageType } from '../storage/image-type.js'
 import { STORAGE_SERVICE, type StorageService } from '../storage/storage.service.js'
 import type { CreateOrderDto, OrderItemInputDto } from './dto/create-order.dto.js'
+import { REFERENCE_DIGITS } from './dto/field-names.js'
 import type { SubmitPaymentDto } from './dto/submit-payment.dto.js'
 import { OrderItem } from './entities/order-item.entity.js'
 import { OrderPayment } from './entities/order-payment.entity.js'
@@ -53,7 +59,10 @@ export interface OrderLineProblem {
     index: number
     productId: string
     variantId: string | null
-    /** Units the product has left (0 when unavailable). */
+    /**
+     * Units this line can keep: what its variant (or product without variants) has left, minus
+     * what earlier lines of the same variant take. 0 when the line cannot be bought.
+     */
     available: number
     message: string
 }
@@ -65,9 +74,7 @@ export interface CreatedOrderDto {
     order: PublicOrderDto
 }
 
-interface LockedCatalog {
-    products: Map<string, Product>
-    variants: Map<string, ProductVariant[]>
+interface LockedCatalog extends LockedStock {
     firstImage: Map<string, string>
 }
 
@@ -75,10 +82,11 @@ function units(count: number): string {
     return count === 1 ? '1 unidad' : `${count} unidades`
 }
 
-function stockMessage(product: Product): string {
-    if (product.stock <= 0) return `«${product.name}» se agotó.`
-    const verb = product.stock === 1 ? 'Solo queda' : 'Solo quedan'
-    return `${verb} ${units(product.stock)} de «${product.name}».`
+/** "Solo quedan 2 de «Franela X – Talla M»." / "«Franela X – Talla M» se agotó." */
+function stockMessage(name: string, stock: number): string {
+    if (stock <= 0) return `«${name}» se agotó.`
+    const verb = stock === 1 ? 'Solo queda' : 'Solo quedan'
+    return `${verb} ${units(stock)} de «${name}».`
 }
 
 function lineProblemsError(problems: OrderLineProblem[]): BadRequestException {
@@ -154,13 +162,16 @@ export class OrdersService {
                 rate.rate,
             )
 
-            // Rows are locked, and the totals per product were checked against the stock.
-            for (const [productId, quantity] of this.quantitiesByProduct(dto.items)) {
-                await manager.query(
-                    `UPDATE "products" SET "stock" = "stock" - $1 WHERE "id" = $2 AND "stock" >= $1`,
-                    [quantity, productId],
-                )
-            }
+            // Rows are locked, and the totals per variant were checked against the stock.
+            await changeStock(
+                manager,
+                'take',
+                lines.map((line) => ({
+                    productId: line.product.id,
+                    variantId: line.variant?.id ?? null,
+                    quantity: line.quantity,
+                })),
+            )
 
             const [{ seq }] = (await manager.query(
                 `SELECT nextval('order_code_seq')::int AS "seq"`,
@@ -476,7 +487,11 @@ export class OrdersService {
         return isPaymentConfigured(payment) ? payment : null
     }
 
-    /** Other payments with this reference on orders that are still alive. */
+    /**
+     * Other payments with this reference on orders that are still alive. References are the
+     * last 6 digits; older payments stored the whole number, so they are compared by its end.
+     * A match only flags the payments for the admin, it never refuses one.
+     */
     private async findDuplicateReferences(
         manager: EntityManager,
         orderId: string,
@@ -485,64 +500,42 @@ export class OrdersService {
         const rows = (await manager.query(
             `SELECT p."id" FROM "order_payments" p
              JOIN "orders" o ON o."id" = p."order_id"
-             WHERE p."reference" = $1 AND p."order_id" <> $2 AND o."status" <> ALL($3)`,
-            [reference, orderId, CLOSED_STATUSES],
+             WHERE RIGHT(p."reference", $4) = $1 AND p."order_id" <> $2 AND o."status" <> ALL($3)`,
+            [reference, orderId, CLOSED_STATUSES, REFERENCE_DIGITS],
         )) as { id: string }[]
         return rows.map((row) => row.id)
     }
 
-    private quantitiesByProduct(items: readonly OrderItemInputDto[]): Map<string, number> {
-        const totals = new Map<string, number>()
-        for (const item of items) {
-            totals.set(item.productId, (totals.get(item.productId) ?? 0) + item.quantity)
-        }
-        return totals
-    }
-
-    /** Locks the ordered products (`FOR UPDATE`, in id order) and reads variants and photos. */
+    /** Locks the ordered products and their variants (see `lockStock`) and reads photos. */
     private async lockCatalog(
         manager: EntityManager,
         items: readonly OrderItemInputDto[],
     ): Promise<LockedCatalog> {
         const ids = [...new Set(items.map((item) => item.productId))].sort()
-        const products = await manager
-            .createQueryBuilder(Product, 'product')
-            .setLock('pessimistic_write')
-            .where('product.id IN (:...ids)', { ids })
-            .orderBy('product.id', 'ASC')
-            .getMany()
-        const variants = await manager.find(ProductVariant, {
-            where: { productId: In(ids) },
-            order: { sortOrder: 'ASC' },
-        })
+        const locked = await lockStock(manager, ids)
         const images = await manager.find(ProductImage, {
             where: { productId: In(ids) },
             order: { sortOrder: 'ASC', createdAt: 'ASC' },
             select: { productId: true, url: true, sortOrder: true, createdAt: true, id: true },
         })
 
-        const variantMap = new Map<string, ProductVariant[]>()
-        for (const variant of variants) {
-            variantMap.set(variant.productId, [
-                ...(variantMap.get(variant.productId) ?? []),
-                variant,
-            ])
-        }
         const firstImage = new Map<string, string>()
         for (const image of images) {
             if (!firstImage.has(image.productId)) firstImage.set(image.productId, image.url)
         }
-        return {
-            products: new Map(products.map((product) => [product.id, product])),
-            variants: variantMap,
-            firstImage,
-        }
+        return { ...locked, firstImage }
     }
 
-    /** Server-side prices for every line; throws 400 with one message per bad line. */
+    /**
+     * Server-side prices for every line; throws 400 with one message per bad line. The stock
+     * is checked per variant (or per product without variants), adding up every cart line of
+     * that variant: earlier lines keep their units first, and each short line reports what it
+     * can keep (`available`).
+     */
     private priceLines(items: readonly OrderItemInputDto[], catalog: LockedCatalog) {
         const problems: OrderLineProblem[] = []
-        const requested = this.quantitiesByProduct(items)
+        /** Units still free per stock unit while walking the cart in order. */
+        const remaining = new Map<string, number>()
         const lines = items.map((item, index) => {
             const product = catalog.products.get(item.productId)
             const problem = (message: string, available = 0) =>
@@ -567,18 +560,21 @@ export class OrdersService {
                 ? variants.find((candidate) => candidate.id === item.variantId)
                 : undefined
             if (item.variantId && !variant) {
-                problem(
-                    `La opción elegida de «${product.name}» ya no existe. Elígela de nuevo.`,
-                    product.stock,
-                )
+                problem(`La opción elegida de «${product.name}» ya no existe. Elígela de nuevo.`)
                 return null
             }
             if (!item.variantId && variants.length > 0) {
-                problem(`Elige una opción de «${product.name}».`, product.stock)
+                problem(`Elige una opción de «${product.name}».`)
                 return null
             }
-            if ((requested.get(product.id) ?? 0) > product.stock) {
-                problem(stockMessage(product), Math.max(0, product.stock))
+
+            const key = stockUnitKey(product.id, variant?.id ?? null)
+            const stock = Math.max(0, variant ? variant.stock : product.stock)
+            const left = remaining.get(key) ?? stock
+            const keeps = Math.min(item.quantity, left)
+            remaining.set(key, left - keeps)
+            if (keeps < item.quantity) {
+                problem(stockMessage(stockItemName(product.name, variant?.label), stock), keeps)
                 return null
             }
             return {

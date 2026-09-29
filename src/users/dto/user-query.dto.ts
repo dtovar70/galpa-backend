@@ -4,7 +4,7 @@ import { feminine, masculine, msg } from '../../common/validation/messages.js'
 import { MaxInputLength } from '../../common/validation/text-limits.js'
 import { toTrimmedString } from '../../products/dto/query-transforms.js'
 
-export const USERS_DEFAULT_PAGE_SIZE = 20
+export const USERS_DEFAULT_PAGE_SIZE = 10
 export const USERS_MAX_PAGE_SIZE = 100
 
 const SEARCH = feminine('La búsqueda')

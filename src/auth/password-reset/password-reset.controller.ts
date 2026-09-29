@@ -8,8 +8,9 @@ import { PASSWORD_RESET_REQUESTED, PasswordResetService } from './password-reset
 const WINDOW_MS = 15 * 60_000
 
 /**
- * "¿Olvidaste tu contraseña?" for panel users: a 6-digit code sent through a channel
- * (Telegram), then the new password. No session is created: the user logs in afterwards.
+ * "¿Olvidaste tu contraseña?" for panel users: a 6-digit code sent through a channel (a linked
+ * Telegram chat, or email), then the new password. No session is created: the user logs in
+ * afterwards.
  */
 @Controller('auth/password-reset')
 export class PasswordResetController {

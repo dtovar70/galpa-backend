@@ -32,12 +32,19 @@ import { OrderNote } from './order-note.entity.js'
 import { OrderPayment } from './order-payment.entity.js'
 import { OrderStatusHistory } from './order-status-history.entity.js'
 
-/** One product that could not be fully taken out of stock again. */
+/** One variant (or product without variants) that could not be fully taken out of stock again. */
 export interface StockConflictLine {
     /** Null when the product was deleted after the order was placed. */
     productId: string | null
+    /**
+     * The ordered variant (it may have been deleted since); null for a product without
+     * variants. Absent on lines recorded before stock was kept per variant.
+     */
+    variantId?: string | null
     productName: string
-    /** Units the order needs (every line of that product). */
+    /** Snapshot of the ordered variant's label; absent on lines recorded before, like `variantId`. */
+    variantLabel?: string | null
+    /** Units the order needs (every line of that variant). */
     requested: number
     /** Units in stock when the conflict was detected. */
     available: number

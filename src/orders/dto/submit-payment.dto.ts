@@ -8,6 +8,7 @@ import {
     ORDER_FIELD as FIELD,
     PAYER_ID_PATTERN,
     PAYER_PHONE_PATTERN,
+    REFERENCE_DIGITS,
     REFERENCE_PATTERN,
 } from './field-names.js'
 
@@ -35,12 +36,13 @@ export function parseAmount({ value }: TransformFnParams): unknown {
  * service.
  */
 export class SubmitPaymentDto {
+    /** The last 6 digits of the bank reference; spaces, dots and dashes are dropped. */
     @Transform(({ value }: TransformFnParams): unknown =>
         typeof value === 'string' ? value.replace(/[\s.-]/g, '') : value,
     )
     @IsString({ message: msg.text(FIELD.reference) })
     @MaxInputLength(FIELD.reference)
-    @Matches(REFERENCE_PATTERN, { message: 'La referencia debe tener entre 4 y 20 dígitos.' })
+    @Matches(REFERENCE_PATTERN, { message: msg.exactDigits(FIELD.reference, REFERENCE_DIGITS) })
     reference: string
 
     /** Four digits here; the service checks it is an active bank of the `banks` catalog. */

@@ -68,6 +68,14 @@ async function seedCategories(): Promise<void> {
     console.log(`  categories: ${categories.length}`)
 }
 
+/**
+ * The seed data keeps one stock per product (copied from the frontend mock): it is shared out
+ * evenly across the variants, the first ones taking the remainder, so the sum stays the same.
+ */
+function splitStock(total: number, count: number, index: number): number {
+    return Math.floor(total / count) + (index < total % count ? 1 : 0)
+}
+
 async function seedProducts(): Promise<void> {
     for (const product of products) {
         const { id, category, variants, compareAtPrice, createdAt, ...fields } = product
@@ -95,6 +103,7 @@ async function seedProducts(): Promise<void> {
                         label: variant.label,
                         priceDelta: variant.priceDelta,
                         colorHex: variant.colorHex ?? null,
+                        stock: splitStock(product.stock, variants.length, sortOrder),
                         sortOrder,
                     })),
                 )

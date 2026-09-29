@@ -107,3 +107,61 @@ describe('envSchema (Telegram)', () => {
         ).toBe(false)
     })
 })
+
+describe('envSchema (mail)', () => {
+    it('defaults to the log driver with nothing else required', () => {
+        const env = validateEnv(BASE)
+        expect(env.MAIL_DRIVER).toBe('log')
+        expect(env.MAIL_FROM).toBeUndefined()
+        expect(env.SMTP_PORT).toBeUndefined()
+    })
+
+    it('accepts Mailpit settings (smtp without login)', () => {
+        const env = validateEnv({
+            ...BASE,
+            MAIL_DRIVER: 'smtp',
+            MAIL_FROM: 'Manada Russo Creativa <pedidos@manadarusso.test>',
+            SMTP_HOST: 'localhost',
+            SMTP_PORT: '1025',
+            SMTP_USER: '',
+            SMTP_PASS: '',
+        })
+        expect(env).toMatchObject({ MAIL_DRIVER: 'smtp', SMTP_HOST: 'localhost', SMTP_PORT: 1025 })
+        expect(env.SMTP_USER).toBeUndefined()
+    })
+
+    it('requires the right variables per driver', () => {
+        expect(() => validateEnv({ ...BASE, MAIL_DRIVER: 'smtp' })).toThrow(
+            /MAIL_FROM[\s\S]*SMTP_HOST[\s\S]*SMTP_PORT/,
+        )
+        expect(() =>
+            validateEnv({
+                ...BASE,
+                MAIL_DRIVER: 'smtp',
+                MAIL_FROM: 'pedidos@example.com',
+                SMTP_HOST: 'smtp.example.com',
+                SMTP_PORT: '587',
+                SMTP_USER: 'only-user',
+            }),
+        ).toThrow(/SMTP_PASS/)
+        expect(() =>
+            validateEnv({ ...BASE, MAIL_DRIVER: 'resend', MAIL_FROM: 'pedidos@example.com' }),
+        ).toThrow(/RESEND_API_KEY/)
+        expect(
+            validateEnv({
+                ...BASE,
+                MAIL_DRIVER: 'resend',
+                MAIL_FROM: 'pedidos@example.com',
+                MAIL_REPLY_TO: 'Tienda <hola@example.com>',
+                RESEND_API_KEY: 're_123',
+            }).MAIL_DRIVER,
+        ).toBe('resend')
+    })
+
+    it('rejects an unknown driver, a malformed sender and a bad port', () => {
+        expect(envSchema.safeParse({ ...BASE, MAIL_DRIVER: 'sendgrid' }).success).toBe(false)
+        expect(envSchema.safeParse({ ...BASE, MAIL_FROM: 'not an address' }).success).toBe(false)
+        expect(envSchema.safeParse({ ...BASE, SMTP_PORT: '70000' }).success).toBe(false)
+        expect(envSchema.safeParse({ ...BASE, SMTP_PORT: 'abc' }).success).toBe(false)
+    })
+})

@@ -33,7 +33,7 @@ import {
 
 /** The answer to every request, whether or not the account exists or can be reached. */
 export const PASSWORD_RESET_REQUESTED =
-    'Si el correo pertenece a una cuenta activa con Telegram vinculado, te enviamos un código de 6 dígitos a Telegram. Vence en 10 minutos.'
+    'Si el correo pertenece a una cuenta activa, te enviamos un código de 6 dígitos por Telegram (si lo tienes vinculado) o a tu correo. Vence en 10 minutos.'
 export const PASSWORD_RESET_INVALID_CODE = 'Código inválido o vencido.'
 export const PASSWORD_RESET_TOO_MANY =
     'Hiciste muchas solicitudes seguidas. Espera unos minutos e intenta de nuevo.'
@@ -45,8 +45,8 @@ const EMAIL_WINDOW_MS = 15 * 60_000
 const NO_USER = 'no-user'
 
 /**
- * "¿Olvidaste tu contraseña?" for panel users, through a delivery channel (Telegram today, email
- * in Phase 5). Nothing here tells whether an email belongs to an account:
+ * "¿Olvidaste tu contraseña?" for panel users, through a delivery channel (a linked Telegram
+ * chat first, email as the fallback). Nothing here tells whether an email belongs to an account:
  *
  * - `request` answers at once with the same body; the lookup, the code and the delivery run
  *   in the background, so the response time does not depend on the account either.
@@ -119,7 +119,7 @@ export class PasswordResetService implements OnApplicationShutdown {
         const channel = await this.firstReachable(recipient)
         if (!channel) {
             this.logger.warn(
-                `Password reset for user ${user.id} not sent: no channel can reach them (no active linked Telegram chat, or the bot is off)`,
+                `Password reset for user ${user.id} not sent: no channel can reach them (no active linked Telegram chat or the bot is off, and mail is off)`,
             )
             return
         }

@@ -1,10 +1,20 @@
-import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryColumn, type Relation } from 'typeorm'
+import {
+    Check,
+    Column,
+    Entity,
+    Index,
+    JoinColumn,
+    ManyToOne,
+    PrimaryColumn,
+    type Relation,
+} from 'typeorm'
 import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
 import { Product } from './product.entity.js'
 
 @Entity({ name: 'product_variants' })
 @Index('product_variants_product_id_idx', ['productId'])
+@Check('product_variants_stock_check', `"stock" >= 0`)
 export class ProductVariant {
     @PrimaryColumn({ type: 'text', primaryKeyConstraintName: 'product_variants_pkey' })
     id: string
@@ -40,4 +50,8 @@ export class ProductVariant {
 
     @Column({ name: 'sort_order', type: 'integer', default: 0 })
     sortOrder: number
+
+    /** Units of this version in stock; `products.stock` holds their sum (see product-stock.ts). */
+    @Column({ type: 'integer', default: 0 })
+    stock: number
 }

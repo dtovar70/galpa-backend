@@ -88,6 +88,15 @@ describe('telegram-format', () => {
                         available: 1,
                         reserved: 1,
                     },
+                    {
+                        productId: 'f',
+                        variantId: 'f-m',
+                        productName: 'Franela',
+                        variantLabel: 'Talla M',
+                        requested: 2,
+                        available: 0,
+                        reserved: 0,
+                    },
                 ],
             },
             payment: {
@@ -103,7 +112,9 @@ describe('telegram-format', () => {
         expect(text).toContain('⚠️ <b>Monto no coincide:</b> sobran Bs. 46,59')
         expect(text).toContain('⚠️ <b>Referencia repetida')
         expect(text).toContain('⏰ <b>Pago fuera de plazo</b>')
-        expect(text).toContain('📦 <b>Stock insuficiente:</b> «Taza» pidió 3, hay 1')
+        expect(text).toContain(
+            '📦 <b>Stock insuficiente:</b> «Taza» pidió 3, hay 1; «Franela – Talla M» pidió 2, hay 0',
+        )
         expect(text).toContain('Registrado manualmente en el panel por Dueña · sin captura')
     })
 

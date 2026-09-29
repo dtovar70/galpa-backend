@@ -85,12 +85,19 @@ export class Product {
     @Column({ type: 'text', array: true, default: () => "'{}'" })
     tags: string[]
 
+    /** Legacy seed data: the shop has no reviews, so this is neither exposed nor ranked on. */
     @Column({ type: 'double precision', default: 0 })
     rating: number
 
+    /** Legacy seed data, see `rating`. */
     @Column({ name: 'review_count', type: 'integer', default: 0 })
     reviewCount: number
 
+    /**
+     * Units in stock. With variants it is derived: the sum of `product_variants.stock`, kept in
+     * sync inside the same transaction that changes them (see product-stock.ts). Only products
+     * without variants hold their own count here.
+     */
     @Column({ type: 'integer', default: 0 })
     stock: number
 
@@ -101,7 +108,7 @@ export class Product {
     @Column({ name: 'search_text', type: 'text', default: '' })
     searchText: string
 
-    /** Derived: bestseller(+10) + nuevo(+4) + rating. Backs the "relevance" sort. */
+    /** Derived: bestseller(+10) + nuevo(+4). Backs the "relevance" sort. */
     @Column({ name: 'relevance_score', type: 'double precision', default: 0 })
     relevanceScore: number
 

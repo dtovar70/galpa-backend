@@ -60,7 +60,7 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
     const pay = (code: string, token: string) => {
         const req = http().post(`/api/orders/${code}/payment?t=${token}`)
         const values: Row = {
-            reference: '00123456',
+            reference: '123456',
             payerBankCode: '0102',
             payerPhone: '0414-1234567',
             paidOn: caracasDay(),

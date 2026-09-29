@@ -11,7 +11,7 @@ import {
 } from 'class-validator'
 import { SLUG_PATTERN } from '../../common/utils/text.util.js'
 import { msg } from '../../common/validation/messages.js'
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../products.constants.js'
+import { ADMIN_DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../products.constants.js'
 import { FIELD } from './field-names.js'
 import { toBoolean, toTrimmedString } from './query-transforms.js'
 
@@ -42,5 +42,5 @@ export class AdminProductQueryDto {
     @IsInt({ message: msg.integer(FIELD.pageSize) })
     @Min(1, { message: msg.min(FIELD.pageSize, 1) })
     @Max(MAX_PAGE_SIZE, { message: msg.max(FIELD.pageSize, MAX_PAGE_SIZE) })
-    pageSize: number = DEFAULT_PAGE_SIZE
+    pageSize: number = ADMIN_DEFAULT_PAGE_SIZE
 }

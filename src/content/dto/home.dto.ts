@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer'
 import { ValidateNested } from 'class-validator'
 import { feminine, masculine, type FieldName } from '../../common/validation/messages.js'
-import type { HomeContent, HomeStep } from '../content.types.js'
+import type { HomeContent, HomeStep, HomeTestimonial } from '../content.types.js'
 import { CONTENT_LIST_SIZES, CONTENT_LIMITS as MAX } from './content-limits.js'
 import { ContentList, ContentText, ContentTextList } from './content-validation.js'
 
@@ -15,6 +15,23 @@ export class HomeStepDto implements HomeStep {
 
     @ContentText(feminine('La descripción del paso'), { max: MAX.text })
     description: string
+}
+
+export class HomeTestimonialDto implements HomeTestimonial {
+    @ContentText(feminine('La opinión del cliente'), { max: MAX.testimonialQuote })
+    quote: string
+
+    @ContentText(masculine('El nombre del cliente'), { max: MAX.testimonialName })
+    name: string
+
+    @ContentText(feminine('La ciudad del cliente'), { max: MAX.city, optional: true })
+    city: string
+
+    @ContentText(masculine('El producto de la reseña'), {
+        max: MAX.testimonialProduct,
+        optional: true,
+    })
+    product: string
 }
 
 export class HomeContentDto implements HomeContent {
@@ -84,6 +101,11 @@ export class HomeContentDto implements HomeContent {
     @ContentText(title('las reseñas'), { max: MAX.title, highlights: true })
     testimonialsTitle: string
 
+    @ContentList(feminine('La lista de reseñas'), CONTENT_LIST_SIZES.testimonials)
+    @ValidateNested({ each: true })
+    @Type(() => HomeTestimonialDto)
+    testimonials: HomeTestimonialDto[]
+
     @ContentText(feminine('La etiqueta del banner final'), { max: MAX.label })
     ctaBadge: string
 
@@ -98,10 +120,4 @@ export class HomeContentDto implements HomeContent {
 
     @ContentText(masculine('El botón secundario del banner final'), { max: MAX.label })
     ctaSecondary: string
-
-    @ContentText(title('el boletín'), { max: MAX.title })
-    newsletterTitle: string
-
-    @ContentText(description('el boletín'), { max: MAX.shortText })
-    newsletterDescription: string
 }

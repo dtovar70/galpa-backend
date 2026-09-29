@@ -94,7 +94,7 @@ describe('Telegram bot (e2e, fake Bot API)', () => {
     const pay = (code: string, token: string, fields: Row = {}, proof = true) => {
         const req = http().post(`/api/orders/${code}/payment?t=${token}`)
         const values: Row = {
-            reference: '00123456',
+            reference: '123456',
             payerBankCode: '0102',
             payerPhone: '0414-1234567',
             paidOn: caracasDay(),
@@ -296,7 +296,7 @@ describe('Telegram bot (e2e, fake Bot API)', () => {
         expect(caption).toContain('2 × Taza Café Primero (15 oz)')
         expect(caption).toContain('<i>“Para mamá”</i>')
         expect(caption).toContain('$36,00 · Bs. 30.760,69')
-        expect(caption).toContain('<code>00123456</code>')
+        expect(caption).toContain('<code>123456</code>')
         expect(caption).toContain('Monto pagado: <b>Bs. 30.000,00</b>')
         expect(caption).toContain('Monto no coincide:</b> faltan Bs. 760,69')
         expect(caption).toContain('Enviado por el cliente')

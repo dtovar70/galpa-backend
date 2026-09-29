@@ -40,7 +40,7 @@ export class OrderAccessLink {
     @Column({ name: 'token_hash', type: 'text', select: false })
     tokenHash: string
 
-    /** The admin who issued it; null for the checkout link (or once the user is deleted). */
+    /** The admin who issued it; null for the checkout and emailed links (or a deleted user). */
     @Column({ name: 'created_by', type: 'text', nullable: true })
     createdById: string | null
 

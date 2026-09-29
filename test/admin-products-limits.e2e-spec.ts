@@ -70,6 +70,35 @@ describe('Admin products limits (e2e)', () => {
         expect(products.create).not.toHaveBeenCalled()
     })
 
+    it('requires a whole, non-negative stock per variant', async () => {
+        const response = await request(app.getHttpServer())
+            .patch('/api/admin/products/p1')
+            .send({
+                variants: [
+                    { label: 'S', priceDelta: 0 },
+                    { label: 'M', priceDelta: 0, stock: -1 },
+                    { label: 'L', priceDelta: 0, stock: 1.5 },
+                ],
+            })
+            .expect(400)
+        expect(errorsOf(response.body, 'variants.0.stock')).toContain(
+            'El stock de la variante debe ser un número entero.',
+        )
+        expect(errorsOf(response.body, 'variants.1.stock')).toEqual([
+            'El stock de la variante no puede ser negativo.',
+        ])
+        expect(errorsOf(response.body, 'variants.2.stock')).toEqual([
+            'El stock de la variante debe ser un número entero.',
+        ])
+        expect(products.update).not.toHaveBeenCalled()
+
+        await request(app.getHttpServer())
+            .patch('/api/admin/products/p1')
+            .send({ variants: [{ id: 'v-s', label: 'S', priceDelta: 0, stock: 0 }] })
+            .expect(200)
+        expect(products.update).toHaveBeenCalledOnce()
+    })
+
     it('rejects a 101-character variant label on update', async () => {
         const response = await request(app.getHttpServer())
             .patch('/api/admin/products/p1')

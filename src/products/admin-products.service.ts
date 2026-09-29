@@ -7,7 +7,7 @@ import {
     NotFoundException,
 } from '@nestjs/common'
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm'
-import { DataSource, Repository } from 'typeorm'
+import { DataSource, In, Repository, type EntityManager } from 'typeorm'
 import { Category } from '../categories/entities/category.entity.js'
 import { slugify } from '../common/utils/text.util.js'
 import { isDbError, omitUndefined } from '../database/db-errors.js'
@@ -21,19 +21,42 @@ import { ProductImage } from './entities/product-image.entity.js'
 import { ProductVariant } from './entities/product-variant.entity.js'
 import { Product } from './entities/product.entity.js'
 import { computeDerivedFields } from './product-derived.js'
+import { syncProductStock } from './product-stock.js'
 import { ProductRepository } from './product.repository.js'
 import { toAdminProduct, type AdminProductDto, type Paginated } from './product.mapper.js'
 import { PRODUCT_NOT_FOUND } from './products.constants.js'
 
-function variantRows(productId: string, variants: ProductVariantInputDto[]) {
-    return variants.map((variant, index) => ({
-        id: newId(),
-        productId,
-        label: variant.label,
-        priceDelta: variant.priceDelta,
-        colorHex: variant.colorHex ?? null,
-        sortOrder: index,
-    }))
+/**
+ * Rows for the variant list, in array order. Ids in `keepIds` (this product's current variants)
+ * are kept so order lines and carts still point to them; anything else gets a new id.
+ */
+function variantRows(
+    productId: string,
+    variants: ProductVariantInputDto[],
+    keepIds: ReadonlySet<string> = new Set(),
+) {
+    const used = new Set<string>()
+    return variants.map((variant, index) => {
+        const id =
+            variant.id && keepIds.has(variant.id) && !used.has(variant.id) ? variant.id : newId()
+        used.add(id)
+        return {
+            id,
+            productId,
+            label: variant.label,
+            priceDelta: variant.priceDelta,
+            colorHex: variant.colorHex ?? null,
+            stock: variant.stock,
+            sortOrder: index,
+        }
+    })
+}
+
+/** With variants, the product's stock is their sum; otherwise the given count. */
+function productStock(variants: ProductVariantInputDto[] | undefined, stock: number | undefined) {
+    return variants?.length
+        ? variants.reduce((sum, variant) => sum + variant.stock, 0)
+        : (stock ?? 0)
 }
 
 @Injectable()
@@ -87,7 +110,6 @@ export class AdminProductsService {
             throw new BadRequestException('No pudimos generar un slug a partir del nombre.')
         }
         const tags = dto.tags ?? []
-        const rating = dto.rating ?? 0
         this.assertCompareAtPrice(dto.price, dto.compareAtPrice)
 
         const id = newId()
@@ -105,11 +127,11 @@ export class AdminProductsService {
                     description: dto.description,
                     highlights: dto.highlights ?? [],
                     tags,
-                    rating,
+                    rating: dto.rating ?? 0,
                     reviewCount: dto.reviewCount ?? 0,
-                    stock: dto.stock,
+                    stock: productStock(dto.variants, dto.stock),
                     isActive: dto.isActive ?? true,
-                    ...computeDerivedFields({ ...dto, tags, rating }),
+                    ...computeDerivedFields({ ...dto, tags }),
                 })
                 const variants = variantRows(id, dto.variants ?? [])
                 if (variants.length) await manager.insert(ProductVariant, variants)
@@ -130,7 +152,6 @@ export class AdminProductsService {
             description: dto.description ?? current.description,
             printText: dto.printText ?? current.printText,
             tags: dto.tags ?? current.tags,
-            rating: dto.rating ?? current.rating,
         }
         const price = dto.price ?? current.price
         const compareAtPrice =
@@ -149,11 +170,9 @@ export class AdminProductsService {
                         ...computeDerivedFields(merged),
                     },
                 )
-                if (variants) {
-                    await manager.delete(ProductVariant, { productId: id })
-                    const rows = variantRows(id, variants)
-                    if (rows.length) await manager.insert(ProductVariant, rows)
-                }
+                if (variants) await this.replaceVariants(manager, id, variants)
+                // Also after a plain `stock` edit: with variants it is always their sum.
+                await syncProductStock(manager, [id])
             })
         } catch (error) {
             this.rethrowConstraintError(error, dto.slug ?? current.slug)
@@ -191,6 +210,26 @@ export class AdminProductsService {
                 }),
             ),
         )
+    }
+
+    /**
+     * Replaces the variant list (order = array order), keeping the ids of the variants that
+     * stay. The product row is already locked by the update, as `lockStock` expects.
+     */
+    private async replaceVariants(
+        manager: EntityManager,
+        productId: string,
+        variants: ProductVariantInputDto[],
+    ): Promise<void> {
+        const current = await manager.find(ProductVariant, {
+            where: { productId },
+            select: { id: true },
+        })
+        const rows = variantRows(productId, variants, new Set(current.map(({ id }) => id)))
+        const kept = new Set(rows.map(({ id }) => id))
+        const removed = current.map(({ id }) => id).filter((id) => !kept.has(id))
+        if (removed.length) await manager.delete(ProductVariant, { id: In(removed) })
+        if (rows.length) await manager.upsert(ProductVariant, rows, ['id'])
     }
 
     private async load(id: string): Promise<Product> {

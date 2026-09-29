@@ -13,7 +13,14 @@ import { DataSource, In, type EntityManager } from 'typeorm'
 import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.service.js'
 import type { Env } from '../config/env.schema.js'
 import { newId } from '../database/id.js'
-import { Product } from '../products/entities/product.entity.js'
+import {
+    changeStock,
+    lockStock,
+    resolveStockUnit,
+    stockItemName,
+    stockUnitKey,
+    type StockChange,
+} from '../products/product-stock.js'
 import { OrderItem } from './entities/order-item.entity.js'
 import { OrderPayment } from './entities/order-payment.entity.js'
 import { OrderStatusHistory } from './entities/order-status-history.entity.js'
@@ -84,10 +91,15 @@ function units(count: number): string {
     return count === 1 ? '1 unidad' : `${count} unidades`
 }
 
-/** "«Taza X» pidió 3, hay 1" for each line. */
+/** "Franela X – Talla M" (just the product name on lines without a variant). */
+export function stockLineName(line: StockConflictLine): string {
+    return stockItemName(line.productName, line.variantLabel)
+}
+
+/** "«Franela X – Talla M» pidió 3, hay 1" for each line. */
 export function describeStockLines(lines: readonly StockConflictLine[]): string {
     return lines
-        .map((line) => `«${line.productName}» pidió ${line.requested}, hay ${line.available}`)
+        .map((line) => `«${stockLineName(line)}» pidió ${line.requested}, hay ${line.available}`)
         .join('; ')
 }
 
@@ -276,7 +288,7 @@ export class OrderStatusService {
                     ? `Pago confirmado con stock insuficiente: ${missing
                           .map(
                               (line) =>
-                                  `«${line.productName}» faltan ${units(line.requested - line.reserved)}`,
+                                  `«${stockLineName(line)}» faltan ${units(line.requested - line.reserved)}`,
                           )
                           .join('; ')}.`
                     : 'Pago confirmado; el stock que faltaba ya estaba disponible.',
@@ -391,32 +403,12 @@ export class OrderStatusService {
         await manager.update(OrderPayment, { orderId, status: 'PENDIENTE' }, changes)
     }
 
-    /** Locks the given products (`FOR UPDATE`, in id order, so concurrent orders never deadlock). */
-    private async lockProducts(
-        manager: EntityManager,
-        ids: string[],
-    ): Promise<Map<string, Product>> {
-        if (!ids.length) return new Map()
-        const products = await manager
-            .createQueryBuilder(Product, 'product')
-            .setLock('pessimistic_write')
-            .where('product.id IN (:...ids)', { ids: [...ids].sort() })
-            .orderBy('product.id', 'ASC')
-            .getMany()
-        return new Map(products.map((product) => [product.id, product]))
-    }
-
-    private async takeStock(manager: EntityManager, productId: string, quantity: number) {
-        await manager.query(
-            `UPDATE "products" SET "stock" = "stock" - $1 WHERE "id" = $2 AND "stock" >= $1`,
-            [quantity, productId],
-        )
-    }
-
     /**
-     * Takes the order's quantities out of stock again, with the same row locks as checkout.
-     * `strict`: all or nothing (reactivation without force). Otherwise every product gives what
-     * it has, never going below 0, and the shortfall is returned as a stock conflict.
+     * Takes the order's quantities out of stock again, with the same row locks as checkout,
+     * per variant (`order_items.variant_id`). `strict`: all or nothing (reactivation without
+     * force). Otherwise every variant gives what it has, never going below 0, and the shortfall
+     * is returned as a stock conflict. A line whose product or variant was deleted gives nothing
+     * and shows up as a conflict line.
      */
     private async reserveStock(
         manager: EntityManager,
@@ -426,43 +418,51 @@ export class OrderStatusService {
     ): Promise<ReserveResult> {
         const items = await manager.find(OrderItem, {
             where: { orderId },
-            select: { productId: true, productName: true, quantity: true, sortOrder: true },
+            select: {
+                productId: true,
+                variantId: true,
+                productName: true,
+                variantLabel: true,
+                quantity: true,
+                sortOrder: true,
+            },
         })
+        const locked = await lockStock(
+            manager,
+            items.flatMap((item) => (item.productId ? [item.productId] : [])),
+        )
         const wanted = new Map<string, StockConflictLine>()
         for (const item of [...items].sort((a, b) => a.sortOrder - b.sortOrder)) {
-            // A deleted product cannot give stock back: it shows up as a conflict line.
-            const key = item.productId ?? `deleted:${item.productName}`
+            const unit = resolveStockUnit(locked, item.productId, item.variantId)
+            const key = unit
+                ? stockUnitKey(unit.productId, unit.variantId)
+                : `missing:${item.productId ?? item.productName}:${item.variantId ?? item.variantLabel ?? ''}`
             const line = wanted.get(key)
             if (line) line.requested += item.quantity
             else {
                 wanted.set(key, {
                     productId: item.productId,
+                    variantId: item.variantId,
                     productName: item.productName,
+                    variantLabel: item.variantLabel,
                     requested: item.quantity,
-                    available: 0,
+                    available: unit?.available ?? 0,
                     reserved: 0,
                 })
             }
         }
-        const products = await this.lockProducts(
-            manager,
-            [...wanted.values()].flatMap((line) => (line.productId ? [line.productId] : [])),
-        )
-        const lines = [...wanted.values()].map((line) => {
-            const product = line.productId ? products.get(line.productId) : undefined
-            const available = product ? Math.max(0, product.stock) : 0
-            return { ...line, available, reserved: Math.min(line.requested, available) }
-        })
+        const lines = [...wanted.values()].map((line) => ({
+            ...line,
+            reserved: Math.min(line.requested, line.available),
+        }))
         const short = lines.filter((line) => line.available < line.requested)
         if (short.length && strict) return { ok: false, lines: short }
 
-        for (const line of [...lines].sort((a, b) =>
-            (a.productId ?? '').localeCompare(b.productId ?? ''),
-        )) {
-            if (line.productId && line.reserved > 0) {
-                await this.takeStock(manager, line.productId, line.reserved)
-            }
-        }
+        await changeStock(
+            manager,
+            'take',
+            lines.flatMap((line) => this.stockChange(line)),
+        )
         return {
             ok: true,
             conflict: short.length
@@ -483,49 +483,87 @@ export class OrderStatusService {
         now: Date,
         userId: string | null,
     ): Promise<StockConflict> {
-        const products = await this.lockProducts(
+        const locked = await lockStock(
             manager,
             conflict.lines.flatMap((line) => (line.productId ? [line.productId] : [])),
         )
         const lines: StockConflictLine[] = []
+        const taken: StockChange[] = []
         for (const line of conflict.lines) {
-            const product = line.productId ? products.get(line.productId) : undefined
-            const take = product
-                ? Math.min(line.requested - line.reserved, Math.max(0, product.stock))
-                : 0
-            if (product && take > 0) await this.takeStock(manager, product.id, take)
-            lines.push({ ...line, reserved: line.reserved + take })
+            // Lines recorded before stock was per variant only resolve for products without variants.
+            const unit = resolveStockUnit(locked, line.productId, line.variantId ?? null)
+            const take = unit ? Math.min(line.requested - line.reserved, unit.available) : 0
+            if (unit && take > 0) {
+                taken.push({ productId: unit.productId, variantId: unit.variantId, quantity: take })
+            }
+            lines.push({ ...line, reserved: line.reserved + Math.max(0, take) })
         }
+        await changeStock(manager, 'take', taken)
         return { ...conflict, lines, resolvedAt: now.toISOString(), resolvedById: userId }
     }
 
     /**
-     * Puts back what the order holds: every line's quantity, except for the products of a stock
-     * conflict, which only give back what was actually taken. Product ids sorted so concurrent
-     * restores never deadlock.
+     * Puts back what the order holds: every line's quantity into its variant, except for the
+     * variants of a stock conflict, which only give back what was actually taken. A line whose
+     * product or variant no longer exists gives nothing back (logged).
      */
     private async restoreStock(manager: EntityManager, order: Order): Promise<void> {
         const items = await manager.find(OrderItem, {
             where: { orderId: order.id },
-            select: { productId: true, quantity: true },
+            select: { productId: true, variantId: true, productName: true, quantity: true },
         })
-        const byProduct = new Map<string, number>()
+        const locked = await lockStock(
+            manager,
+            items.flatMap((item) => (item.productId ? [item.productId] : [])),
+        )
+        const byUnit = new Map<string, StockChange>()
         for (const item of items) {
-            if (!item.productId) continue
-            byProduct.set(item.productId, (byProduct.get(item.productId) ?? 0) + item.quantity)
-        }
-        for (const line of order.stockConflict?.lines ?? []) {
-            if (line.productId && byProduct.has(line.productId)) {
-                byProduct.set(line.productId, line.reserved)
+            const unit = resolveStockUnit(locked, item.productId, item.variantId)
+            if (!unit) {
+                if (item.productId) {
+                    this.logger.warn(
+                        `Order ${order.code}: ${item.quantity} of «${item.productName}» not restored, variant ${item.variantId ?? '(none)'} no longer exists`,
+                    )
+                }
+                continue
+            }
+            const key = stockUnitKey(unit.productId, unit.variantId)
+            const change = byUnit.get(key)
+            if (change) change.quantity += item.quantity
+            else {
+                byUnit.set(key, {
+                    productId: unit.productId,
+                    variantId: unit.variantId,
+                    quantity: item.quantity,
+                })
             }
         }
-        for (const productId of [...byProduct.keys()].sort()) {
-            const quantity = byProduct.get(productId) ?? 0
-            if (quantity <= 0) continue
-            await manager.query(`UPDATE "products" SET "stock" = "stock" + $1 WHERE "id" = $2`, [
-                quantity,
-                productId,
-            ])
+        for (const line of order.stockConflict?.lines ?? []) {
+            if (!line.productId) continue
+            if (line.variantId !== undefined) {
+                const change = byUnit.get(stockUnitKey(line.productId, line.variantId))
+                if (change) change.quantity = line.reserved
+                continue
+            }
+            // A line recorded before stock was per variant: cap the product's variants together.
+            let left = line.reserved
+            for (const change of byUnit.values()) {
+                if (change.productId !== line.productId) continue
+                change.quantity = Math.min(change.quantity, left)
+                left -= change.quantity
+            }
         }
+        await changeStock(manager, 'give', [...byUnit.values()])
+    }
+
+    private stockChange(line: StockConflictLine): StockChange[] {
+        if (!line.productId || line.reserved <= 0) return []
+        return [
+            {
+                productId: line.productId,
+                variantId: line.variantId ?? null,
+                quantity: line.reserved,
+            },
+        ]
     }
 }

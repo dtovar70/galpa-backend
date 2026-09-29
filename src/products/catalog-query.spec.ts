@@ -68,15 +68,16 @@ describe('CATALOG_ORDER_BY', () => {
     it('mirrors the frontend mock comparators with a stable tie-breaker', () => {
         expect(CATALOG_ORDER_BY.relevance).toEqual([
             ['product.relevanceScore', 'DESC'],
+            ['product.createdAt', 'DESC'],
             ['product.id', 'ASC'],
         ])
         expect(CATALOG_ORDER_BY['price-asc'][0]).toEqual(['product.price', 'ASC'])
         expect(CATALOG_ORDER_BY['price-desc'][0]).toEqual(['product.price', 'DESC'])
         expect(CATALOG_ORDER_BY.newest[0]).toEqual(['product.createdAt', 'DESC'])
-        expect(CATALOG_ORDER_BY.rating.slice(0, 2)).toEqual([
-            ['product.rating', 'DESC'],
-            ['product.reviewCount', 'DESC'],
-        ])
+    })
+
+    it('has no rating sort: the shop has no reviews', () => {
+        expect(Object.keys(CATALOG_ORDER_BY)).not.toContain('rating')
     })
 })
 
@@ -98,11 +99,16 @@ describe('resolvePageWindow', () => {
 })
 
 describe('derived product fields', () => {
-    it('scores bestsellers, then new products, then rating', () => {
-        expect(computeRelevanceScore({ tags: ['bestseller', 'nuevo'], rating: 4.9 })).toBeCloseTo(
-            18.9,
-        )
-        expect(computeRelevanceScore({ tags: ['oferta'], rating: 4.2 })).toBeCloseTo(4.2)
+    it('scores bestsellers (+10) and new products (+4) only', () => {
+        expect(computeRelevanceScore({ tags: ['bestseller', 'nuevo'] })).toBe(14)
+        expect(computeRelevanceScore({ tags: ['bestseller'] })).toBe(10)
+        expect(computeRelevanceScore({ tags: ['nuevo', 'personalizable'] })).toBe(4)
+        expect(computeRelevanceScore({ tags: ['oferta'] })).toBe(0)
+    })
+
+    it('ignores the legacy rating when scoring', () => {
+        const withRating = { tags: ['bestseller'], rating: 4.9 }
+        expect(computeRelevanceScore(withRating)).toBe(10)
     })
 
     it('builds a normalized search haystack including tags', () => {

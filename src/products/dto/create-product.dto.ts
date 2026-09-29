@@ -29,8 +29,19 @@ import {
 import { FIELD } from './field-names.js'
 
 const MAX_PRICE = 99_999_999.99
+/** A typo never overflows the `integer` columns, not even summed over every variant. */
+const MAX_STOCK = 1_000_000
 
 export class ProductVariantInputDto {
+    /**
+     * An existing variant of this product keeps its id (orders and carts point to it); omit it
+     * for a new variant. Unknown ids get a new one.
+     */
+    @IsOptional()
+    @IsString({ message: msg.text(FIELD.variantId) })
+    @MaxLength(80, { message: msg.maxLength(FIELD.variantId, 80) })
+    id?: string
+
     @IsString({ message: msg.text(FIELD.variantLabel) })
     @IsNotEmpty({ message: msg.required(FIELD.variantLabel) })
     @MaxLength(80, { message: msg.maxLength(FIELD.variantLabel, 80) })
@@ -45,6 +56,11 @@ export class ProductVariantInputDto {
     @MaxInputLength(FIELD.variantColor)
     @Matches(HEX_COLOR_PATTERN, { message: msg.hexColor(FIELD.variantColor) })
     colorHex?: string
+
+    @IsInt({ message: msg.integer(FIELD.variantStock) })
+    @Min(0, { message: msg.notNegative(FIELD.variantStock) })
+    @Max(MAX_STOCK, { message: msg.max(FIELD.variantStock, MAX_STOCK) })
+    stock: number
 }
 
 export class CreateProductDto {
@@ -118,9 +134,15 @@ export class CreateProductDto {
     @Min(0, { message: msg.notNegative(FIELD.reviewCount) })
     reviewCount?: number
 
+    /**
+     * Only for a product without variants (0 when omitted). With variants the product's stock
+     * is the sum of theirs, so this value is ignored.
+     */
+    @IsOptional()
     @IsInt({ message: msg.integer(FIELD.stock) })
     @Min(0, { message: msg.notNegative(FIELD.stock) })
-    stock: number
+    @Max(MAX_STOCK, { message: msg.max(FIELD.stock, MAX_STOCK) })
+    stock?: number
 
     @IsOptional()
     @IsBoolean({ message: msg.boolean(FIELD.isActive) })

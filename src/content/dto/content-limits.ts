@@ -29,6 +29,9 @@ export const CONTENT_LIMITS = {
     bankName: 100,
     holderName: 80,
     instructions: 500,
+    testimonialQuote: 400,
+    testimonialName: 60,
+    testimonialProduct: 80,
 } as const
 
 export const CONTENT_LIST_SIZES = {
@@ -39,6 +42,7 @@ export const CONTENT_LIST_SIZES = {
     values: { minItems: 1, maxItems: 8 },
     stats: { minItems: 1, maxItems: 8 },
     faq: { minItems: 1, maxItems: 12 },
+    testimonials: { minItems: 0, maxItems: 12 },
 } as const
 
 export {

@@ -9,6 +9,8 @@ export interface ProductVariantDto {
     label: string
     priceDelta: number
     colorHex?: string
+    /** Units of this version in stock (the product's `stock` is the sum of its variants). */
+    stock: number
 }
 
 export interface ProductImageDto {
@@ -30,8 +32,6 @@ export interface PublicProductDto {
     description: string
     highlights: string[]
     variants: ProductVariantDto[]
-    rating: number
-    reviewCount: number
     tags: ProductTag[]
     stock: number
     createdAt: string
@@ -68,9 +68,8 @@ export function toPublicProduct(product: ProductWithRelations): PublicProductDto
             label: variant.label,
             priceDelta: variant.priceDelta,
             ...(variant.colorHex !== null && { colorHex: variant.colorHex }),
+            stock: variant.stock,
         })),
-        rating: product.rating,
-        reviewCount: product.reviewCount,
         tags: product.tags as ProductTag[],
         stock: product.stock,
         createdAt: product.createdAt.toISOString(),

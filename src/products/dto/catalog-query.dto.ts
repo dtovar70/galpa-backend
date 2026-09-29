@@ -17,6 +17,7 @@ import {
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     PRODUCT_TAGS,
+    RETIRED_SORT_OPTIONS,
     SORT_OPTIONS,
     type ProductTag,
     type SortOption,
@@ -36,6 +37,10 @@ export class CatalogQueryDto {
     search?: string
 
     @IsOptional()
+    // An old bookmarked `?sort=rating` shows the default order instead of failing.
+    @Transform(({ value }) =>
+        typeof value === 'string' && RETIRED_SORT_OPTIONS.includes(value) ? 'relevance' : value,
+    )
     @IsIn(SORT_OPTIONS, { message: 'El orden solicitado no es válido.' })
     sort: SortOption = 'relevance'
 

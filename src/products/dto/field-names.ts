@@ -20,6 +20,8 @@ export const FIELD = {
     variantLabel: feminine('La etiqueta de la variante'),
     variantPriceDelta: feminine('La diferencia de precio de la variante'),
     variantColor: masculine('El color de la variante'),
+    variantStock: masculine('El stock de la variante'),
+    variantId: masculine('El identificador de la variante'),
     search: feminine('La búsqueda'),
     sort: masculine('El orden'),
     minPrice: masculine('El precio mínimo'),

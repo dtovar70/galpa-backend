@@ -36,6 +36,9 @@ export const msg = {
     /** For `@IsNumber({ maxDecimalPlaces: 2 })`, which reports both problems with one message. */
     money: (field: FieldName) => `${field.name} debe ser un número con hasta 2 decimales.`,
     integer: (field: FieldName) => `${field.name} debe ser un número entero.`,
+    /** Only digits, exactly `count` of them: "La referencia debe tener exactamente 6 dígitos." */
+    exactDigits: (field: FieldName, count: number) =>
+        `${field.name} debe tener exactamente ${count} dígitos.`,
     notNegative: (field: FieldName) =>
         `${field.name} no puede ser ${agree(field, 'negativo', 'negativa')}.`,
     min: (field: FieldName, min: number) =>

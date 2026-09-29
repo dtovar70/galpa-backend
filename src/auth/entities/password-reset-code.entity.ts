@@ -43,7 +43,7 @@ export class PasswordResetCode {
     @Column({ name: 'code_hash', type: 'text' })
     codeHash: string
 
-    /** How the code was sent (`telegram`; `email` arrives in Phase 5). */
+    /** How the code was sent (`telegram` or `email`). */
     @Column({ type: 'varchar', length: 20 })
     channel: PasswordResetChannelId
 

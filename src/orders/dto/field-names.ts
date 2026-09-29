@@ -28,6 +28,7 @@ export const ORDER_FIELD = {
     forceStock: feminine('La opción de reactivar sin stock'),
     refundStatus: feminine('La respuesta sobre el reembolso'),
     refundReference: feminine('La referencia del reembolso'),
+    code: masculine('El código del pedido'),
 } as const
 
 export const ORDER_LIMITS = {
@@ -55,6 +56,11 @@ export const CUSTOMER_PHONE_PATTERN = VE_MOBILE_PATTERN
 export const PAYER_PHONE_PATTERN = VE_MOBILE_PATTERN
 /** Cédula or RIF of the payer: "V-12345678", "J-123456789". */
 export const PAYER_ID_PATTERN = ID_NUMBER_PATTERN
-export const REFERENCE_PATTERN = /^\d{4,20}$/
+/**
+ * Pago Móvil reference: its last 6 digits (the full number is long and error-prone to copy).
+ * Payments stored before this rule keep their longer reference.
+ */
+export const REFERENCE_DIGITS = 6
+export const REFERENCE_PATTERN = /^\d{6}$/
 export const ORDER_CODE_PATTERN = /^MR-\d{6,}$/
 export const MAX_AMOUNT_BS = 9_999_999_999.99

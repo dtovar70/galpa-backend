@@ -1,4 +1,8 @@
-import { CARACAS_TIME_ZONE } from '../common/utils/caracas-date.js'
+import {
+    formatCaracasDateTime,
+    formatCaracasTime,
+    formatDay,
+} from '../common/utils/caracas-date.js'
 import { formatBs, formatUsd, formatVeNumber } from '../common/utils/money-format.js'
 import type { User } from '../auth/entities/user.entity.js'
 import { Role } from '../auth/role.enum.js'
@@ -8,7 +12,11 @@ import type {
     RateSyncRecoveredEvent,
 } from '../exchange-rate/exchange-rate.events.js'
 import type { StockConflict } from '../orders/entities/order.entity.js'
+import { stockItemName } from '../products/product-stock.js'
 import type { PaymentSource } from '../orders/entities/order-payment.entity.js'
+
+/** Moved to common/utils; re-exported for the bot's existing imports. */
+export { formatCaracasDateTime, formatCaracasTime, formatDay }
 
 /** Telegram's limits: 4096 characters per message, 1024 per photo caption (after parsing). */
 export const TELEGRAM_TEXT_LIMIT = 4096
@@ -42,41 +50,6 @@ export function visibleLength(html: string): number {
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/&amp;/g, '&').length
-}
-
-const dateTimeParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CARACAS_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-})
-
-function caracasParts(date: Date): Record<string, string> {
-    return Object.fromEntries(
-        dateTimeParts.formatToParts(date).map((part) => [part.type, part.value]),
-    )
-}
-
-/** "3:05 p. m." in Caracas time. */
-export function formatCaracasTime(date: Date): string {
-    const parts = caracasParts(date)
-    const suffix = parts.dayPeriod?.toUpperCase() === 'PM' ? 'p. m.' : 'a. m.'
-    return `${parts.hour}:${parts.minute} ${suffix}`
-}
-
-/** "25/09/2026, 3:05 p. m." in Caracas time. */
-export function formatCaracasDateTime(date: Date): string {
-    const parts = caracasParts(date)
-    return `${parts.day}/${parts.month}/${parts.year}, ${formatCaracasTime(date)}`
-}
-
-/** "2026-09-25" (a calendar day) -> "25/09/2026". */
-export function formatDay(day: string): string {
-    const [year, month, date] = day.split('-')
-    return year && month && date ? `${date}/${month}/${year}` : day
 }
 
 export interface MessageItem {
@@ -131,13 +104,13 @@ export function itemLines(items: readonly MessageItem[]): string[] {
     return lines
 }
 
-/** Unresolved stock conflict lines: "«Taza» pidió 3, hay 1". */
+/** Unresolved stock conflict lines: "«Taza – 15 oz» pidió 3, hay 1". */
 export function stockConflictText(conflict: StockConflict | null): string | null {
     if (!conflict || conflict.resolvedAt) return null
     return conflict.lines
         .map(
             (line) =>
-                `«${escapeHtml(truncate(line.productName, MAX_NAME_LENGTH))}» pidió ${line.requested}, hay ${line.available}`,
+                `«${escapeHtml(truncate(stockItemName(line.productName, line.variantLabel), MAX_NAME_LENGTH))}» pidió ${line.requested}, hay ${line.available}`,
         )
         .join('; ')
 }

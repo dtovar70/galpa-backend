@@ -73,7 +73,7 @@ export class FakeDb {
                 slug: 'taza',
                 name: 'Taza Café Primero',
                 price: 12.9,
-                stock: 5,
+                stock: 8,
                 isActive: true,
             },
             {
@@ -85,11 +85,28 @@ export class FakeDb {
                 isActive: true,
             },
             { id: 'off-001', slug: 'oculto', name: 'Oculto', price: 5, stock: 9, isActive: false },
+            // No variants: the product row holds its own stock.
+            { id: 'key-001', slug: 'llavero', name: 'Llavero', price: 4, stock: 3, isActive: true },
         )
+        // Stock per variant; `products.stock` is their sum (8 for the mug, 1 for the tee).
         this.table(ProductVariant).push(
-            { id: 'v-11oz', productId: 'mug-001', label: '11 oz', priceDelta: 0, sortOrder: 0 },
-            { id: 'v-15oz', productId: 'mug-001', label: '15 oz', priceDelta: 3.1, sortOrder: 1 },
-            { id: 'v-m', productId: 'tee-001', label: 'M', priceDelta: 0, sortOrder: 0 },
+            {
+                id: 'v-11oz',
+                productId: 'mug-001',
+                label: '11 oz',
+                priceDelta: 0,
+                stock: 3,
+                sortOrder: 0,
+            },
+            {
+                id: 'v-15oz',
+                productId: 'mug-001',
+                label: '15 oz',
+                priceDelta: 3.1,
+                stock: 5,
+                sortOrder: 1,
+            },
+            { id: 'v-m', productId: 'tee-001', label: 'M', priceDelta: 0, stock: 1, sortOrder: 0 },
         )
         this.table(ProductImage).push({
             id: 'img-1',
@@ -117,8 +134,28 @@ export class FakeDb {
         return rows
     }
 
+    /** A product's stock (the sum of its variants when it has any). */
     stock(id: string): number {
         return this.table(Product).find((row) => row.id === id)?.stock as number
+    }
+
+    variantStock(id: string): number {
+        return this.table(ProductVariant).find((row) => row.id === id)?.stock as number
+    }
+
+    /** Sets a variant's stock and keeps its product's total in sync, like the admin does. */
+    setVariantStock(id: string, stock: number): void {
+        const variant = this.table(ProductVariant).find((row) => row.id === id)!
+        variant.stock = stock
+        this.syncProductStock(variant.productId as string)
+    }
+
+    private syncProductStock(productId: string): void {
+        const variants = this.table(ProductVariant).filter((row) => row.productId === productId)
+        const product = this.table(Product).find((row) => row.id === productId)
+        if (product && variants.length) {
+            product.stock = variants.reduce((sum, row) => sum + (row.stock as number), 0)
+        }
     }
 
     private queryBuilder(entity: unknown) {
@@ -138,7 +175,9 @@ export class FakeDb {
             getMany: () =>
                 Promise.resolve(
                     this.table(entity).filter((row) =>
-                        (params.ids as string[]).includes(row.id as string),
+                        params.productIds
+                            ? (params.productIds as string[]).includes(row.productId as string)
+                            : (params.ids as string[]).includes(row.id as string),
                     ),
                 ),
             // The admin list: per-status counts, pending refunds and one filtered page.
@@ -223,25 +262,31 @@ export class FakeDb {
 
     private rawQuery(sql: string, params: unknown[] = []): Promise<unknown> {
         if (sql.includes('nextval')) return Promise.resolve([{ seq: ++this.seq }])
-        if (sql.includes('"stock" - $1')) {
-            const product = this.table(Product).find((row) => row.id === params[1])
-            if (product && (product.stock as number) >= (params[0] as number)) {
-                product.stock = (product.stock as number) - (params[0] as number)
+        if (sql.includes('SUM(v."stock")')) {
+            this.syncProductStock(params[0] as string)
+            return Promise.resolve([])
+        }
+        if (sql.includes('"stock" - $1') || sql.includes('"stock" + $1')) {
+            const entity = sql.includes('"product_variants"') ? ProductVariant : Product
+            const row = this.table(entity).find((candidate) => candidate.id === params[1])
+            const delta = (params[0] as number) * (sql.includes('"stock" - $1') ? -1 : 1)
+            if (row && (row.stock as number) + delta >= 0) {
+                row.stock = (row.stock as number) + delta
             }
             return Promise.resolve([])
         }
-        if (sql.includes('"stock" + $1')) {
-            const product = this.table(Product).find((row) => row.id === params[1])
-            if (product) product.stock = (product.stock as number) + (params[0] as number)
-            return Promise.resolve([])
-        }
         if (sql.includes('FROM "order_payments" p')) {
-            const [reference, orderId, closed] = params as [string, string, string[]]
+            const [reference, orderId, closed, digits] = params as [
+                string,
+                string,
+                string[],
+                number,
+            ]
             return Promise.resolve(
                 this.table(OrderPayment).filter((payment) => {
                     const order = this.table(Order).find((row) => row.id === payment.orderId)
                     return (
-                        payment.reference === reference &&
+                        (payment.reference as string).slice(-digits) === reference &&
                         payment.orderId !== orderId &&
                         !closed.includes(order?.status as string)
                     )

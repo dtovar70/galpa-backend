@@ -64,14 +64,13 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
         ],
         testimonialsEyebrow: 'Clientes felices',
         testimonialsTitle: 'Lo que *dicen* de nosotros',
+        testimonials: [],
         ctaBadge: 'Pedidos por mayor',
         ctaTitle: '¿Tienes una *idea* en mente?',
         ctaDescription:
             'Cuéntanos qué necesitas y te mandamos un boceto sin compromiso. Desde una pieza hasta cien.',
         ctaPrimary: 'Pedir mi diseño',
         ctaSecondary: 'Conócenos',
-        newsletterTitle: 'Recibe ideas y descuentos',
-        newsletterDescription: 'Un correo al mes con diseños nuevos y promos. Sin spam, prometido.',
     },
     about: {
         badge: 'Desde 2020',
@@ -116,7 +115,6 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
         stats: [
             { value: '+4.800', label: 'pedidos entregados' },
             { value: '6', label: 'años sublimando' },
-            { value: '4.9', label: 'promedio de reseñas' },
             { value: '23', label: 'ciudades atendidas' },
         ],
     },

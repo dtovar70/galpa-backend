@@ -36,3 +36,38 @@ export function addDays(day: string, days: number): string {
     date.setUTCDate(date.getUTCDate() + days)
     return date.toISOString().slice(0, 10)
 }
+
+const dateTimeParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CARACAS_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+})
+
+function caracasParts(date: Date): Record<string, string> {
+    return Object.fromEntries(
+        dateTimeParts.formatToParts(date).map((part) => [part.type, part.value]),
+    )
+}
+
+/** "3:05 p. m." in Caracas time. */
+export function formatCaracasTime(date: Date): string {
+    const parts = caracasParts(date)
+    const suffix = parts.dayPeriod?.toUpperCase() === 'PM' ? 'p. m.' : 'a. m.'
+    return `${parts.hour}:${parts.minute} ${suffix}`
+}
+
+/** "25/09/2026, 3:05 p. m." in Caracas time. */
+export function formatCaracasDateTime(date: Date): string {
+    const parts = caracasParts(date)
+    return `${parts.day}/${parts.month}/${parts.year}, ${formatCaracasTime(date)}`
+}
+
+/** "2026-09-25" (a calendar day) -> "25/09/2026". */
+export function formatDay(day: string): string {
+    const [year, month, date] = day.split('-')
+    return year && month && date ? `${date}/${month}/${year}` : day
+}

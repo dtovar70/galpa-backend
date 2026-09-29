@@ -43,20 +43,25 @@ function errorsOf(details: FieldError[], field: string): string[] {
 describe('createValidationPipe', () => {
     it('returns Spanish per-field messages that name the field', async () => {
         const details = await detailsFor(
-            { ...VALID_PRODUCT, price: -1, variants: [{ label: '', priceDelta: 0 }] },
+            { ...VALID_PRODUCT, price: -1, variants: [{ label: '', priceDelta: 0, stock: 1 }] },
             CreateProductDto,
         )
         expect(errorsOf(details, 'price')).toEqual(['El precio no puede ser negativo.'])
         expect(errorsOf(details, 'variants.0.label')).toEqual([
             'La etiqueta de la variante es obligatoria.',
         ])
+        expect(errorsOf(details, 'variants.0.stock')).toEqual([])
     })
 
     it('reports missing required fields in Spanish', async () => {
-        const details = await detailsFor({}, CreateProductDto)
+        const details = await detailsFor({ variants: [{ label: 'M' }] }, CreateProductDto)
         const messages = details.flatMap((detail) => detail.errors)
         expect(messages).toContain('El nombre es obligatorio.')
-        expect(messages).toContain('El stock debe ser un número entero.')
+        // The product's own stock is optional (with variants it is their sum).
+        expect(errorsOf(details, 'stock')).toEqual([])
+        expect(errorsOf(details, 'variants.0.stock')).toContain(
+            'El stock de la variante debe ser un número entero.',
+        )
         for (const message of messages) {
             expect(message).not.toMatch(/must|should|each value/)
         }
@@ -64,7 +69,11 @@ describe('createValidationPipe', () => {
 
     it('translates unknown properties, also inside nested variants', async () => {
         const details = await detailsFor(
-            { ...VALID_PRODUCT, sku: 'X', variants: [{ label: 'A', priceDelta: 0, foo: 1 }] },
+            {
+                ...VALID_PRODUCT,
+                sku: 'X',
+                variants: [{ label: 'A', priceDelta: 0, stock: 1, foo: 1 }],
+            },
             CreateProductDto,
         )
         expect(errorsOf(details, 'sku')).toEqual(['El campo "sku" no está permitido.'])

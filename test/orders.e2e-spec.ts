@@ -17,7 +17,7 @@ import { OrderAccessLink } from '../src/orders/entities/order-access-link.entity
 import { Order } from '../src/orders/entities/order.entity.js'
 import { OrderExpiryService } from '../src/orders/order-expiry.service.js'
 import { ORDER_EVENTS } from '../src/orders/orders.events.js'
-import { Product } from '../src/products/entities/product.entity.js'
+import { ProductVariant } from '../src/products/entities/product-variant.entity.js'
 import { STORAGE_SERVICE, type StorageService } from '../src/storage/storage.service.js'
 
 import { FakeDb, PAGO_MOVIL, PNG, USERS, type Row } from './fixtures/fake-orders-db.js'
@@ -51,7 +51,7 @@ describe('Orders (e2e)', () => {
     const payment = (code: string, token: string, fields: Row = {}) => {
         const req = request(app.getHttpServer()).post(`/api/orders/${code}/payment?t=${token}`)
         const values: Row = {
-            reference: '00123456',
+            reference: '123456',
             payerBankCode: '0102',
             payerPhone: '0414-1234567',
             paidOn: caracasDay(),
@@ -121,7 +121,10 @@ describe('Orders (e2e)', () => {
         })
         expect(order.status).toBe('PENDIENTE_PAGO')
         expect(order.pagoMovil).toEqual(PAGO_MOVIL)
-        expect(db.stock('mug-001')).toBe(3)
+        // Only the ordered variant loses units; the product total follows.
+        expect(db.variantStock('v-15oz')).toBe(3)
+        expect(db.variantStock('v-11oz')).toBe(3)
+        expect(db.stock('mug-001')).toBe(6)
         // Only the hash is stored.
         expect(db.table(OrderAccessLink)).toHaveLength(1)
         expect(db.table(OrderAccessLink)[0]).toMatchObject({
@@ -166,7 +169,7 @@ describe('Orders (e2e)', () => {
             .expect(400)
         expect(stock.body.code).toBe('ORDER_ITEMS_INVALID')
         expect(stock.body.details).toEqual([
-            { field: 'items.0', errors: ['Solo queda 1 unidad de «Franela».'] },
+            { field: 'items.0', errors: ['Solo queda 1 unidad de «Franela – M».'] },
             { field: 'items.1', errors: ['«Oculto» ya no está disponible.'] },
         ])
         expect(stock.body.lines[0]).toMatchObject({ index: 0, available: 1 })
@@ -226,6 +229,10 @@ describe('Orders (e2e)', () => {
             .expect(200)
         expect(submitted.body.status).toBe('PENDIENTE_VERIFICACION')
         expect(storage.uploadPrivate).toHaveBeenCalledTimes(1)
+
+        // Stored before the 6-digit rule: the whole bank reference. Its last 6 digits count.
+        const stored = db.table(OrderPayment)[0]
+        if (stored) stored.reference = '0098123456'
 
         // Same reference on another order, different amount: accepted but flagged.
         await payment(second.code, second.accessToken, { amountBs: '30000' }).expect(200)
@@ -316,14 +323,14 @@ describe('Orders (e2e)', () => {
         })
 
         await payment(order.code, order.accessToken, {
-            reference: '99887766',
+            reference: '887766',
             amountBs: '30760.69',
         }).expect(200)
 
         await post('/transitions', 'editor', { to: 'CANCELADO', note: 'Cliente desistió' }).expect(
             403,
         )
-        expect(db.stock('mug-001')).toBe(3)
+        expect(db.variantStock('v-15oz')).toBe(3)
         // A payment is waiting: the admin must say whether money has to be given back.
         const noRefundAnswer = await post('/transitions', 'admin', {
             to: 'CANCELADO',
@@ -332,7 +339,7 @@ describe('Orders (e2e)', () => {
         expect(noRefundAnswer.body.details).toEqual([
             { field: 'refundStatus', errors: ['Indica si hay que devolver dinero al cliente.'] },
         ])
-        expect(db.stock('mug-001')).toBe(3)
+        expect(db.variantStock('v-15oz')).toBe(3)
         const cancelled = await post('/transitions', 'admin', {
             to: 'CANCELADO',
             note: 'Cliente desistió',
@@ -341,7 +348,7 @@ describe('Orders (e2e)', () => {
         expect(cancelled.body.status).toBe('CANCELADO')
         expect(cancelled.body.stockRestored).toBe(true)
         expect(cancelled.body.refund).toMatchObject({ status: 'PENDIENTE', refundedAt: null })
-        expect(db.stock('mug-001')).toBe(5)
+        expect(db.variantStock('v-15oz')).toBe(5)
 
         const refunded = await post('/refund', 'editor', { reference: '11223344' }).expect(200)
         expect(refunded.body.refund).toMatchObject({
@@ -358,7 +365,7 @@ describe('Orders (e2e)', () => {
 
         // The customer can no longer pay a cancelled order.
         const closed = await payment(order.code, order.accessToken, {
-            reference: '55443322',
+            reference: '443322',
             amountBs: '30760.69',
         }).expect(409)
         expect(closed.body.message).toBe(
@@ -442,15 +449,15 @@ describe('Orders (e2e)', () => {
 
     it('takes the stock back when an expired order receives its payment', async () => {
         const order = await createOrder()
-        expect(db.stock('mug-001')).toBe(3)
+        expect(db.variantStock('v-15oz')).toBe(3)
         await expire(order.code)
-        expect(db.stock('mug-001')).toBe(5)
+        expect(db.variantStock('v-15oz')).toBe(5)
 
         const paid = await payment(order.code, order.accessToken, { amountBs: '30760.69' }).expect(
             200,
         )
         expect(paid.body.status).toBe('PENDIENTE_VERIFICACION')
-        expect(db.stock('mug-001')).toBe(3)
+        expect(db.variantStock('v-15oz')).toBe(3)
         expect(orderRow(order.code)).toMatchObject({
             latePayment: true,
             stockRestored: false,
@@ -462,7 +469,7 @@ describe('Orders (e2e)', () => {
         const order = await createOrder([{ productId: 'tee-001', variantId: 'v-m', quantity: 1 }])
         await expire(order.code)
         // Sold elsewhere in the meantime.
-        db.table(Product).find((row) => row.id === 'tee-001')!.stock = 0
+        db.setVariantStock('v-m', 0)
 
         await payment(order.code, order.accessToken, { amountBs: '1' }).expect(200)
         expect(db.stock('tee-001')).toBe(0)
@@ -476,7 +483,9 @@ describe('Orders (e2e)', () => {
             lines: [
                 {
                     productId: 'tee-001',
+                    variantId: 'v-m',
                     productName: 'Franela',
+                    variantLabel: 'M',
                     requested: 1,
                     available: 0,
                     reserved: 0,
@@ -484,7 +493,7 @@ describe('Orders (e2e)', () => {
             ],
         })
         expect(detail.body.history.at(-1).note).toBe(
-            'Pago hecho después del plazo, según la fecha indicada. Stock insuficiente: «Franela» pidió 1, hay 0.',
+            'Pago hecho después del plazo, según la fecha indicada. Stock insuficiente: «Franela – M» pidió 1, hay 0.',
         )
 
         const unacknowledged = await admin(order.code, '/transitions', 'editor', {
@@ -501,7 +510,7 @@ describe('Orders (e2e)', () => {
         expect(confirmed.body.status).toBe('PAGO_VERIFICADO')
         expect(confirmed.body.stockConflict.resolvedAt).not.toBeNull()
         expect(confirmed.body.history.at(-1).note).toBe(
-            'Pago confirmado con stock insuficiente: «Franela» faltan 1 unidad.',
+            'Pago confirmado con stock insuficiente: «Franela – M» faltan 1 unidad.',
         )
         expect(db.stock('tee-001')).toBe(0)
 
@@ -523,7 +532,7 @@ describe('Orders (e2e)', () => {
             .post(`/api/admin/orders/${order.code}/payments`)
             .set('Cookie', cookie('editor'))
         for (const [key, value] of Object.entries({
-            reference: '77889900',
+            reference: '889900',
             payerBankCode: '0134',
             payerPhone: '0414-1234567',
             paidOn: caracasDay(),
@@ -538,7 +547,7 @@ describe('Orders (e2e)', () => {
         expect(recorded.body.payments[0]).toMatchObject({
             source: 'admin',
             late: false,
-            reference: '77889900',
+            reference: '889900',
         })
         expect(db.table(OrderPayment)[0]).toMatchObject({
             source: 'admin',
@@ -556,14 +565,15 @@ describe('Orders (e2e)', () => {
     it('reactivates an expired order, refusing (or forcing) when stock is missing', async () => {
         const order = await createOrder([{ productId: 'tee-001', variantId: 'v-m', quantity: 1 }])
         await expire(order.code)
-        db.table(Product).find((row) => row.id === 'tee-001')!.stock = 0
+        db.setVariantStock('v-m', 0)
 
         const refused = await admin(order.code, '/transitions', 'editor', {
             to: 'PENDIENTE_PAGO',
         }).expect(409)
         expect(refused.body).toMatchObject({
             code: 'STOCK_INSUFFICIENT',
-            message: 'No hay stock suficiente para reactivar el pedido: «Franela» pidió 1, hay 0.',
+            message:
+                'No hay stock suficiente para reactivar el pedido: «Franela – M» pidió 1, hay 0.',
         })
         expect(orderRow(order.code).status).toBe('EXPIRADO')
 
@@ -575,7 +585,7 @@ describe('Orders (e2e)', () => {
         expect(new Date(forced.body.paymentDueAt).getTime()).toBeGreaterThan(Date.now())
         expect(forced.body.stockConflict.lines[0]).toMatchObject({ requested: 1, available: 0 })
         expect(forced.body.history.at(-1).note).toBe(
-            'Pedido reactivado con un nuevo plazo de pago. Stock insuficiente: «Franela» pidió 1, hay 0.',
+            'Pedido reactivado con un nuevo plazo de pago. Stock insuficiente: «Franela – M» pidió 1, hay 0.',
         )
         expect(db.stock('tee-001')).toBe(0)
 
@@ -585,7 +595,197 @@ describe('Orders (e2e)', () => {
             to: 'PENDIENTE_PAGO',
         }).expect(200)
         expect(reactivated.body).toMatchObject({ status: 'PENDIENTE_PAGO', stockConflict: null })
-        expect(db.stock('mug-001')).toBe(3)
+        expect(db.variantStock('v-15oz')).toBe(3)
+    })
+
+    describe('stock per variant', () => {
+        const MUG = 'Taza Café Primero'
+
+        it('adds up the lines of one variant and names it when it is short', async () => {
+            const short = await request(app.getHttpServer())
+                .post('/api/orders')
+                .send(
+                    checkout({
+                        items: [
+                            { productId: 'mug-001', variantId: 'v-15oz', quantity: 3 },
+                            { productId: 'mug-001', variantId: 'v-11oz', quantity: 3 },
+                            {
+                                productId: 'mug-001',
+                                variantId: 'v-15oz',
+                                quantity: 3,
+                                personalization: 'Ana',
+                            },
+                        ],
+                    }),
+                )
+                .expect(400)
+            // 5 units of 15 oz: the first line keeps 3, the third can keep 2; 11 oz is fine.
+            expect(short.body.details).toEqual([
+                { field: 'items.2', errors: [`Solo quedan 5 unidades de «${MUG} – 15 oz».`] },
+            ])
+            expect(short.body.lines).toEqual([
+                expect.objectContaining({ index: 2, variantId: 'v-15oz', available: 2 }),
+            ])
+            expect(db.variantStock('v-15oz')).toBe(5)
+
+            await createOrder([
+                { productId: 'mug-001', variantId: 'v-15oz', quantity: 2 },
+                { productId: 'mug-001', variantId: 'v-11oz', quantity: 1 },
+                { productId: 'mug-001', variantId: 'v-15oz', quantity: 2, personalization: 'Ana' },
+            ])
+            expect(db.variantStock('v-15oz')).toBe(1)
+            expect(db.variantStock('v-11oz')).toBe(2)
+            expect(db.stock('mug-001')).toBe(3)
+        })
+
+        it('refuses a sold-out variant while the other one still sells', async () => {
+            db.setVariantStock('v-15oz', 0)
+            expect(db.stock('mug-001')).toBe(3)
+
+            const soldOut = await request(app.getHttpServer())
+                .post('/api/orders')
+                .send(checkout())
+                .expect(400)
+            expect(soldOut.body.details).toEqual([
+                { field: 'items.0', errors: [`«${MUG} – 15 oz» se agotó.`] },
+            ])
+            expect(soldOut.body.lines[0]).toMatchObject({ index: 0, available: 0 })
+
+            await createOrder([{ productId: 'mug-001', variantId: 'v-11oz', quantity: 3 }])
+            expect(db.variantStock('v-11oz')).toBe(0)
+            expect(db.stock('mug-001')).toBe(0)
+        })
+
+        it('gives each variant back its own units when the order expires', async () => {
+            const order = await createOrder([
+                { productId: 'mug-001', variantId: 'v-11oz', quantity: 1 },
+                { productId: 'mug-001', variantId: 'v-15oz', quantity: 2 },
+            ])
+            expect([db.variantStock('v-11oz'), db.variantStock('v-15oz')]).toEqual([2, 3])
+            await expire(order.code)
+            expect([db.variantStock('v-11oz'), db.variantStock('v-15oz')]).toEqual([3, 5])
+            expect(db.stock('mug-001')).toBe(8)
+        })
+
+        it('keeps the stock of a product without variants on the product', async () => {
+            const order = await createOrder([{ productId: 'key-001', quantity: 2 }])
+            expect(db.stock('key-001')).toBe(1)
+
+            const short = await request(app.getHttpServer())
+                .post('/api/orders')
+                .send(checkout({ items: [{ productId: 'key-001', quantity: 2 }] }))
+                .expect(400)
+            expect(short.body.details).toEqual([
+                { field: 'items.0', errors: ['Solo queda 1 unidad de «Llavero».'] },
+            ])
+
+            await admin(order.code, '/transitions', 'admin', {
+                to: 'CANCELADO',
+                note: 'Duplicado',
+            }).expect(200)
+            expect(db.stock('key-001')).toBe(3)
+        })
+
+        it('restores nothing for a deleted variant and flags it when taken again', async () => {
+            const order = await createOrder([
+                { productId: 'mug-001', variantId: 'v-15oz', quantity: 2 },
+                { productId: 'mug-001', variantId: 'v-11oz', quantity: 1 },
+            ])
+            // The owner removed the 15 oz version (its 3 remaining units go with it).
+            const variants = db.table(ProductVariant)
+            variants.splice(
+                variants.findIndex((row) => row.id === 'v-15oz'),
+                1,
+            )
+
+            await admin(order.code, '/transitions', 'admin', {
+                to: 'CANCELADO',
+                note: 'Duplicado',
+            }).expect(200)
+            expect(orderRow(order.code).stockRestored).toBe(true)
+            expect(db.variantStock('v-11oz')).toBe(3)
+
+            const refused = await admin(order.code, '/transitions', 'admin', {
+                to: 'PENDIENTE_PAGO',
+            }).expect(409)
+            expect(refused.body.message).toBe(
+                `No hay stock suficiente para reactivar el pedido: «${MUG} – 15 oz» pidió 2, hay 0.`,
+            )
+
+            const forced = await admin(order.code, '/transitions', 'admin', {
+                to: 'PENDIENTE_PAGO',
+                forceStock: true,
+            }).expect(200)
+            expect(forced.body.stockConflict.lines).toEqual([
+                {
+                    productId: 'mug-001',
+                    variantId: 'v-15oz',
+                    productName: MUG,
+                    variantLabel: '15 oz',
+                    requested: 2,
+                    available: 0,
+                    reserved: 0,
+                },
+            ])
+            // The variant that still exists was taken again.
+            expect(db.variantStock('v-11oz')).toBe(2)
+        })
+
+        it('takes a conflict line from its variant once the owner restocks it', async () => {
+            const order = await createOrder([
+                { productId: 'tee-001', variantId: 'v-m', quantity: 1 },
+            ])
+            await expire(order.code)
+            db.setVariantStock('v-m', 0)
+            await payment(order.code, order.accessToken, { amountBs: '1' }).expect(200)
+
+            db.setVariantStock('v-m', 4)
+            const confirmed = await admin(order.code, '/transitions', 'editor', {
+                to: 'PAGO_VERIFICADO',
+                acknowledgeStockConflict: true,
+            }).expect(200)
+            expect(confirmed.body.stockConflict.lines[0]).toMatchObject({
+                variantId: 'v-m',
+                reserved: 1,
+            })
+            expect(db.variantStock('v-m')).toBe(3)
+            expect(db.stock('tee-001')).toBe(3)
+
+            // Cancelling after the conflict gives back only what was taken.
+            await admin(order.code, '/transitions', 'admin', {
+                to: 'CANCELADO',
+                note: 'Sin franelas',
+                refundStatus: 'NO_APLICA',
+            }).expect(200)
+            expect(db.variantStock('v-m')).toBe(4)
+        })
+
+        it('caps a legacy conflict line (no variantId) over all the variants of its product', async () => {
+            const order = await createOrder([
+                { productId: 'mug-001', variantId: 'v-15oz', quantity: 2 },
+                { productId: 'mug-001', variantId: 'v-11oz', quantity: 1 },
+            ])
+            orderRow(order.code).stockConflict = {
+                detectedAt: new Date().toISOString(),
+                lines: [
+                    {
+                        productId: 'mug-001',
+                        productName: MUG,
+                        requested: 3,
+                        available: 1,
+                        reserved: 1,
+                    },
+                ],
+                resolvedAt: null,
+                resolvedById: null,
+            }
+            await admin(order.code, '/transitions', 'admin', {
+                to: 'CANCELADO',
+                note: 'Duplicado',
+            }).expect(200)
+            // Only 1 unit was held: it goes back to the first line's variant.
+            expect([db.variantStock('v-15oz'), db.variantStock('v-11oz')]).toEqual([4, 2])
+        })
     })
 
     it('reactivates a cancelled order only for ADMIN and only if never paid', async () => {
@@ -594,13 +794,13 @@ describe('Orders (e2e)', () => {
             to: 'CANCELADO',
             note: 'Duplicado',
         }).expect(200)
-        expect(db.stock('mug-001')).toBe(5)
+        expect(db.variantStock('v-15oz')).toBe(5)
         await admin(order.code, '/transitions', 'editor', { to: 'PENDIENTE_PAGO' }).expect(403)
         const detail = await admin(order.code, '/transitions', 'admin', {
             to: 'PENDIENTE_PAGO',
         }).expect(200)
         expect(detail.body.status).toBe('PENDIENTE_PAGO')
-        expect(db.stock('mug-001')).toBe(3)
+        expect(db.variantStock('v-15oz')).toBe(3)
 
         const paid = await createOrder()
         await payment(paid.code, paid.accessToken, { amountBs: '30760.69' }).expect(200)
@@ -689,6 +889,17 @@ describe('Orders (e2e)', () => {
             'reference',
         ])
 
+        // Only the last 6 digits of the bank reference: no more, no less.
+        for (const reference of ['12345', '1234567', '0012345678']) {
+            const wrong = await payment(order.code, order.accessToken, {
+                reference,
+                amountBs: '1',
+            }).expect(400)
+            expect(wrong.body.details).toEqual([
+                { field: 'reference', errors: ['La referencia debe tener exactamente 6 dígitos.'] },
+            ])
+        }
+
         // Four digits, but not an active bank of the catalog: unknown, or deactivated (0104).
         for (const payerBankCode of ['9999', '0104']) {
             const bank = await payment(order.code, order.accessToken, {
@@ -767,7 +978,7 @@ describe('Orders (e2e)', () => {
                 .post(`/api/admin/orders/${order.code}/payments`)
                 .set('Cookie', cookie('editor'))
             for (const [key, value] of Object.entries({
-                reference: '77889900',
+                reference: '889900',
                 payerBankCode: '0134',
                 payerPhone: '0424-1234567',
                 payerIdNumber,

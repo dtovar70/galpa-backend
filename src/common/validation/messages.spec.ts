@@ -18,6 +18,12 @@ describe('validation messages', () => {
         )
     })
 
+    it('asks for an exact number of digits', () => {
+        expect(msg.exactDigits(feminine('La referencia'), 6)).toBe(
+            'La referencia debe tener exactamente 6 dígitos.',
+        )
+    })
+
     it('formats large numbers the Venezuelan way', () => {
         expect(msg.max(masculine('El precio'), 99_999_999.99)).toBe(
             'El precio no puede ser mayor que 99.999.999,99.',

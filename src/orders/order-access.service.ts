@@ -64,7 +64,7 @@ export class OrderAccessService {
 
     /**
      * Creates a new link for the order (inside `manager`'s transaction when given). `createdById`
-     * is the admin who asked for it; null for the checkout link.
+     * is the admin who asked for it; null for the checkout link and the emailed ones.
      */
     async issue(
         orderId: string,

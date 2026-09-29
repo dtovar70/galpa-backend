@@ -84,6 +84,16 @@ describe('mergeSection', () => {
         })
         expect(merged).toEqual({ ...DEFAULT_SITE_CONTENT.shipping, flatRate: 6 })
     })
+
+    it('gives a home row saved before testimonials existed an empty list', () => {
+        const { testimonials: _testimonials, ...stored } = {
+            ...DEFAULT_SITE_CONTENT.home,
+            heroBadge: 'Hecho a mano',
+        }
+        const merged = mergeSection('home', stored)
+        expect(merged.testimonials).toEqual([])
+        expect(merged.heroBadge).toBe('Hecho a mano')
+    })
 })
 
 describe('ContentService', () => {
@@ -312,6 +322,77 @@ describe('ContentService', () => {
         home.steps[1] = { title: '', description: 'Algo' }
         expect(await detailsOf(service.update('home', home, USER))).toEqual([
             { field: 'steps.1.title', errors: ['El título del paso es obligatorio.'] },
+        ])
+    })
+
+    it('ships no testimonials and stores trimmed ones with optional city and product', async () => {
+        expect(DEFAULT_SITE_CONTENT.home.testimonials).toEqual([])
+        const { service, entries } = setup()
+        await service.update(
+            'home',
+            {
+                ...DEFAULT_SITE_CONTENT.home,
+                testimonials: [
+                    { quote: '  Me encantó mi taza  ', name: 'Ana', city: 'Valencia', product: '' },
+                    { quote: 'Llegó rapidísimo', name: ' Luis ', city: '', product: 'Franela' },
+                ],
+            },
+            USER,
+        )
+        const [, params] = entries.query.mock.calls[0] as [string, unknown[]]
+        expect((JSON.parse(params[1] as string) as { testimonials: unknown }).testimonials).toEqual(
+            [
+                { quote: 'Me encantó mi taza', name: 'Ana', city: 'Valencia', product: '' },
+                { quote: 'Llegó rapidísimo', name: 'Luis', city: '', product: 'Franela' },
+            ],
+        )
+    })
+
+    it('validates each testimonial and the size of the list', async () => {
+        const { service } = setup()
+        const home = structuredClone(DEFAULT_SITE_CONTENT.home)
+        home.testimonials = [
+            { quote: '   ', name: 'x'.repeat(61), city: '', product: 'y'.repeat(81) },
+        ]
+        expect(await detailsOf(service.update('home', home, USER))).toEqual([
+            { field: 'testimonials.0.quote', errors: ['La opinión del cliente es obligatoria.'] },
+            {
+                field: 'testimonials.0.name',
+                errors: ['El nombre del cliente no puede superar los 60 caracteres.'],
+            },
+            {
+                field: 'testimonials.0.product',
+                errors: ['El producto de la reseña no puede superar los 80 caracteres.'],
+            },
+        ])
+
+        home.testimonials = [{ quote: 'z'.repeat(401), name: 'Ana', city: '', product: '' }]
+        expect(await detailsOf(service.update('home', home, USER))).toEqual([
+            {
+                field: 'testimonials.0.quote',
+                errors: ['La opinión del cliente no puede superar los 400 caracteres.'],
+            },
+        ])
+
+        home.testimonials = Array.from({ length: 13 }, (_, index) => ({
+            quote: `Opinión ${index}`,
+            name: 'Ana',
+            city: '',
+            product: '',
+        }))
+        expect(await detailsOf(service.update('home', home, USER))).toEqual([
+            {
+                field: 'testimonials',
+                errors: ['La lista de reseñas admite como máximo 12 elementos.'],
+            },
+        ])
+
+        // Sections are replaced whole: optional fields must still be sent.
+        home.testimonials = [{ quote: 'Bien', name: 'Ana' } as never]
+        const missing = await detailsOf(service.update('home', home, USER))
+        expect(missing.map(({ field, errors }) => [field, errors[0]])).toEqual([
+            ['testimonials.0.city', 'La ciudad del cliente debe ser un texto.'],
+            ['testimonials.0.product', 'El producto de la reseña debe ser un texto.'],
         ])
     })
 
