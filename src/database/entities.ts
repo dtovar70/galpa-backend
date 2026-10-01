@@ -4,8 +4,11 @@ import { Bank } from '../catalogs/entities/bank.entity.js'
 import { MobilePrefix } from '../catalogs/entities/mobile-prefix.entity.js'
 import { OrderStatusDefinition } from '../catalogs/entities/order-status-definition.entity.js'
 import { OrderStatusGroup } from '../catalogs/entities/order-status-group.entity.js'
+import { CategoryDesignTemplate } from '../categories/entities/category-design-template.entity.js'
 import { Category } from '../categories/entities/category.entity.js'
 import { SiteContentEntry } from '../content/entities/site-content.entity.js'
+import { DesignAsset } from '../designs/entities/design-asset.entity.js'
+import { Design } from '../designs/entities/design.entity.js'
 import { ExchangeRate } from '../exchange-rate/entities/exchange-rate.entity.js'
 import { OrderAccessLink } from '../orders/entities/order-access-link.entity.js'
 import { OrderItem } from '../orders/entities/order-item.entity.js'
@@ -24,6 +27,7 @@ import { TelegramMessage } from '../telegram/entities/telegram-message.entity.js
 export const ENTITIES = [
     User,
     Category,
+    CategoryDesignTemplate,
     Product,
     ProductVariant,
     ProductImage,
@@ -35,6 +39,8 @@ export const ENTITIES = [
     OrderStatusHistory,
     OrderNote,
     OrderAccessLink,
+    Design,
+    DesignAsset,
     OrderStatusGroup,
     OrderStatusDefinition,
     Bank,

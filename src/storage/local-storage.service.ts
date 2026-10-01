@@ -7,6 +7,7 @@ import { IMAGE_EXTENSIONS } from './image-type.js'
 import type {
     PrivateFileAccess,
     PrivateFolder,
+    PublicFolder,
     StorageService,
     StoredFile,
     StoredPrivateFile,
@@ -22,10 +23,9 @@ export const LOCAL_UPLOADS_DIR = join(process.cwd(), 'uploads')
  */
 export const LOCAL_PRIVATE_UPLOADS_DIR = join(process.cwd(), 'private-uploads')
 
-const PRODUCTS_SUBDIR = 'products'
-const SAFE_PUBLIC_ID = /^products\/[a-f0-9-]{36}\.(jpg|png|webp)$/
+const SAFE_PUBLIC_ID = /^(products|design-templates)\/[a-f0-9-]{36}\.(jpg|png|webp)$/
 /** Keys this service creates for private files; anything else is refused (path traversal). */
-const SAFE_PRIVATE_KEY = /^payment-proofs\/[a-f0-9-]{36}\.(jpg|png|webp)$/
+const SAFE_PRIVATE_KEY = /^(payment-proofs|designs)\/[a-f0-9-]{36}\.(jpg|png|webp)$/
 
 const CONTENT_TYPES: Record<string, string> = {
     jpg: 'image/jpeg',
@@ -43,14 +43,18 @@ export class LocalStorageService implements StorageService {
         private readonly privateDir: string = LOCAL_PRIVATE_UPLOADS_DIR,
     ) {}
 
-    async upload(image: UploadableImage): Promise<StoredFile> {
-        const directory = join(LOCAL_UPLOADS_DIR, PRODUCTS_SUBDIR)
+    /**
+     * Served by `useStaticAssets` after the app-wide CORS middleware, so the storefront origin
+     * gets `Access-Control-Allow-Origin` and can draw these images on a canvas too.
+     */
+    async upload(image: UploadableImage, folder: PublicFolder = 'products'): Promise<StoredFile> {
+        const directory = join(LOCAL_UPLOADS_DIR, folder)
         await mkdir(directory, { recursive: true })
 
         const fileName = `${randomUUID()}.${IMAGE_EXTENSIONS[image.type]}`
         await writeFile(join(directory, fileName), image.buffer)
 
-        const publicId = `${PRODUCTS_SUBDIR}/${fileName}`
+        const publicId = `${folder}/${fileName}`
         return { url: `${this.publicApiUrl}/uploads/${publicId}`, publicId }
     }
 

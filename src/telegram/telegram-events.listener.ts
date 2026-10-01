@@ -11,7 +11,9 @@ import {
     type RateSyncFailingEvent,
     type RateSyncRecoveredEvent,
 } from '../exchange-rate/exchange-rate.events.js'
+import { CONTACT_EVENTS, type ContactMessageReceivedEvent } from '../contact/contact.events.js'
 import { TelegramBotService } from './telegram-bot.service.js'
+import { TelegramContactService } from './telegram-contact.service.js'
 import {
     escapeHtml,
     formatCaracasTime,
@@ -25,7 +27,7 @@ import { TelegramPaymentsService } from './telegram-payments.service.js'
 const EXCHANGE_RATE_PANEL_PATH = '/admin/tasa-bcv'
 
 /**
- * Order and rate-sync events → Telegram. Listeners run asynchronously after the change was
+ * Order, rate-sync and contact form events → Telegram. Listeners run asynchronously after the change was
  * committed and never throw: a Telegram outage can never fail or slow down the customer's
  * request (or the rate sync).
  */
@@ -36,6 +38,7 @@ export class TelegramEventsListener {
     constructor(
         private readonly telegram: TelegramBotService,
         private readonly payments: TelegramPaymentsService,
+        private readonly contact: TelegramContactService,
     ) {}
 
     @OnEvent(ORDER_EVENTS.paymentSubmitted, { async: true })
@@ -94,6 +97,19 @@ export class TelegramEventsListener {
         if (!this.telegram.enabled) return
         await this.safely('rate sync recovered', async () => {
             await this.payments.broadcast(rateSyncRecoveredMessage(event), EXCHANGE_RATE_PANEL_PATH)
+        })
+    }
+
+    /** The contact form was accepted (it checked a chat could receive it). */
+    @OnEvent(CONTACT_EVENTS.messageReceived, { async: true })
+    async onContactMessage(event: ContactMessageReceivedEvent): Promise<void> {
+        await this.safely('contact message', async () => {
+            const delivered = await this.contact.notify(event)
+            if (!delivered) {
+                this.logger.error(
+                    `Contact message from ${event.email} (${event.topic}) reached no Telegram chat`,
+                )
+            }
         })
     }
 

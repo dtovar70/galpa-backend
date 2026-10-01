@@ -8,6 +8,7 @@ import { ContentService } from '../content/content.service.js'
 import { isPaymentConfigured } from '../content/content.types.js'
 import { newId } from '../database/id.js'
 import { ExchangeRateService } from '../exchange-rate/exchange-rate.service.js'
+import { readStock } from '../products/product-stock.js'
 import type { Paginated } from '../products/product.mapper.js'
 import {
     STORAGE_SERVICE,
@@ -41,6 +42,11 @@ import {
 } from './order-status.service.js'
 import { ORDER_EVENTS } from './orders.events.js'
 import { OrdersService } from './orders.service.js'
+import {
+    liveStockConflict,
+    readLiveStockConflict,
+    stockConflictProductIds,
+} from './stock-conflict.js'
 
 export type OrderStatusCounts = Record<OrderStatus, number>
 
@@ -177,6 +183,16 @@ export class AdminOrdersService {
             if (!latestPayment.has(payment.orderId)) latestPayment.set(payment.orderId, payment)
         }
         const itemCounts = new Map(quantities.map((row) => [row.orderId, Number(row.quantity)]))
+        // Open conflicts are snapshots: flag only the ones still short with today's stock.
+        const openConflicts = rows.flatMap((order) =>
+            order.stockConflict && !order.stockConflict.resolvedAt ? [order.stockConflict] : [],
+        )
+        const stock = openConflicts.length
+            ? await readStock(
+                  this.dataSource.manager,
+                  openConflicts.flatMap(stockConflictProductIds),
+              )
+            : null
         const label = await this.catalog.labeler()
 
         return {
@@ -195,7 +211,11 @@ export class AdminOrdersService {
                     totalBs: order.totalBs,
                     itemCount: itemCounts.get(order.id) ?? 0,
                     latePayment: order.latePayment,
-                    stockConflict: Boolean(order.stockConflict && !order.stockConflict.resolvedAt),
+                    stockConflict: Boolean(
+                        stock &&
+                        order.stockConflict &&
+                        liveStockConflict(order.stockConflict, stock).stillShort,
+                    ),
                     refundStatus: order.refundStatus,
                     latestPayment: payment
                         ? {
@@ -253,7 +273,7 @@ export class AdminOrdersService {
         const order = await this.dataSource.getRepository(Order).findOne({
             where: { code },
             relations: {
-                items: true,
+                items: { design: { assets: true } },
                 payments: { reviewedBy: true, recordedBy: true },
                 history: { actorUser: true },
                 adminNotes: { author: true },
@@ -267,7 +287,10 @@ export class AdminOrdersService {
         const rules = allowedTransitions(order.status, adminActor(user)).filter(
             (rule) => !(rule.requiresNoVerifiedPayment && everVerified),
         )
-        return toAdminOrder(order, rules, await this.catalog.labeler())
+        const stockConflict = order.stockConflict
+            ? await readLiveStockConflict(this.dataSource.manager, order.stockConflict)
+            : null
+        return toAdminOrder(order, rules, await this.catalog.labeler(), stockConflict)
     }
 
     async transition(

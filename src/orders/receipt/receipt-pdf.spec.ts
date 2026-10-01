@@ -1,5 +1,10 @@
 import { orderQrPng } from '../qr/order-qr.js'
-import { printable, renderReceiptPdf, type ReceiptData } from './receipt-pdf.js'
+import {
+    personalizationCell,
+    printable,
+    renderReceiptPdf,
+    type ReceiptData,
+} from './receipt-pdf.js'
 
 function receipt(items: number): ReceiptData {
     return {
@@ -69,6 +74,23 @@ describe('receipt PDF', () => {
             pdf.toString('latin1').match(/\/Subtype \/Image/g)?.length ?? 0
         expect(images(withQr)).toBe(images(plain) + 1)
         expect(pageCount(withQr)).toBe(1)
+    })
+
+    it('names the own design and its garment color in the personalization column', () => {
+        expect(
+            personalizationCell({ hasDesign: true, designColor: 'Negro', personalization: 'Luna' }),
+        ).toBe('Diseño propio\nColor: Negro\n“Luna”')
+        expect(personalizationCell({ hasDesign: true, personalization: null })).toBe(
+            'Diseño propio',
+        )
+        expect(personalizationCell({ hasDesign: false, personalization: null })).toBe('—')
+        expect(
+            personalizationCell({
+                hasDesign: true,
+                designTexts: '«Sofía 7 🎂», «Luna»',
+                personalization: null,
+            }),
+        ).toBe('Diseño propio con texto «Sofía 7 », «Luna»')
     })
 
     it('paginates long item lists', async () => {

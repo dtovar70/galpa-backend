@@ -1,5 +1,10 @@
 import type { ContactContent, PaymentContent } from '../../content/content.types.js'
-import { orderLinkEmail, orderReceivedEmail, type OrderReceivedData } from './order-emails.js'
+import {
+    designLine,
+    orderLinkEmail,
+    orderReceivedEmail,
+    type OrderReceivedData,
+} from './order-emails.js'
 
 const CONTACT: ContactContent = {
     email: 'hola@manadarusso.com',
@@ -53,6 +58,8 @@ const ORDER: OrderReceivedData = {
             lineTotalUsd: 12,
             personalization: '<b>Ñandú</b>',
             sortOrder: 0,
+            designId: 'design-1',
+            design: { colorName: 'Negro', colorHex: '#1F2937' },
         },
     ],
 }
@@ -68,7 +75,7 @@ describe('order emails', () => {
         // Items in their order, with variant, quantity and personalization.
         expect(text.indexOf('Taza Café Primero · 15 oz')).toBeLessThan(text.indexOf('Franela · M'))
         expect(text).toContain(
-            '- Taza Café Primero · 15 oz — $12,00\n  Cantidad: 2 × $6,00\n  Personalización: “<b>Ñandú</b>”',
+            '- Taza Café Primero · 15 oz — $12,00\n  Cantidad: 2 × $6,00\n  Diseño propio: imprimiremos la imagen que subiste.\n  Color: Negro\n  Personalización: “<b>Ñandú</b>”',
         )
         expect(text).toContain(
             'Subtotal: $32,00\nEnvío: $4,00\nTotal: $36,00\nTotal en bolívares: Bs. 30.760,69',
@@ -88,6 +95,8 @@ describe('order emails', () => {
         expect(text).toContain('WhatsApp (0414-5086536) (https://wa.me/584145086536)')
 
         expect(html).toContain('&lt;b&gt;Ñandú&lt;/b&gt;')
+        // The garment color with its swatch.
+        expect(html).toMatch(/background:#1F2937;[^>]*><\/span>Color: Negro/)
         expect(html).not.toContain('<b>Ñandú</b>')
         expect(html).toContain(`href="${LINK}"`)
         expect(html).toContain('Ver mi pedido')
@@ -114,5 +123,19 @@ describe('order emails', () => {
         expect(email.text).toContain('Nos pediste el enlace de tu pedido MR-000123.')
         expect(email.text).toContain(`Ver mi pedido: ${LINK}`)
         expect(email.html).toContain(`href="${LINK}"`)
+    })
+})
+
+describe('designLine', () => {
+    it('mentions the texts of the design, or its images', () => {
+        const image = { type: 'image' } as never
+        const text = { type: 'text', content: 'Sofía 7' } as never
+        expect(designLine([image, text])).toBe(
+            'Diseño propio con texto «Sofía 7»: imprimiremos tu diseño tal como lo armaste.',
+        )
+        expect(designLine([image, image])).toBe(
+            'Diseño propio: imprimiremos las imágenes que subiste.',
+        )
+        expect(designLine(undefined)).toBe('Diseño propio: imprimiremos la imagen que subiste.')
     })
 })

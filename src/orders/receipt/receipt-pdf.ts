@@ -22,6 +22,12 @@ export interface ReceiptData {
         name: string
         variant: string | null
         personalization: string | null
+        /** The customer uploaded their own image for the line ("Diseño propio"). */
+        hasDesign?: boolean
+        /** Its garment color ("Negro"), when the design was made on a template color. */
+        designColor?: string | null
+        /** Its texts, already summarized: "«Sofía 7», «Luna»". */
+        designTexts?: string | null
         quantity: number
         unitUsd: number
         totalUsd: number
@@ -91,6 +97,29 @@ const FOOTER_HEIGHT = 56
  * Customer text may hold emoji, which the embedded fonts cannot draw (they would print as empty
  * boxes): they are dropped, the rest (accents, ñ, "–", "·") is kept.
  */
+/** The "Personalización" cell: own design (and its garment color), then the text. */
+export function personalizationCell(
+    item: Pick<
+        ReceiptData['items'][number],
+        'hasDesign' | 'designColor' | 'designTexts' | 'personalization'
+    >,
+): string {
+    const design = item.designTexts
+        ? `Diseño propio con texto ${printable(item.designTexts)}`
+        : 'Diseño propio'
+    return (
+        [
+            item.hasDesign ? design : null,
+            item.hasDesign && item.designColor
+                ? `Color: ${printable(item.designColor)}`
+                : null,
+            item.personalization ? `“${printable(item.personalization)}”` : null,
+        ]
+            .filter(Boolean)
+            .join('\n') || '—'
+    )
+}
+
 export function printable(text: string): string {
     return text
         .replace(/\p{Extended_Pictographic}|\u{FE0F}|\u{200D}|\u{20E3}|\p{Emoji_Modifier}/gu, '')
@@ -330,9 +359,7 @@ class ReceiptLayout {
             const cells: Record<(typeof this.columns)[number]['key'], string> = {
                 name: printable(item.name),
                 variant: item.variant ? printable(item.variant) : '—',
-                personalization: item.personalization
-                    ? `“${printable(item.personalization)}”`
-                    : '—',
+                personalization: personalizationCell(item),
                 quantity: String(item.quantity),
                 unit: formatUsd(item.unitUsd),
                 total: formatUsd(item.totalUsd),

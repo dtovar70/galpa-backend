@@ -65,6 +65,22 @@ describe('SlidingWindowLimiter', () => {
         now = 1000
         expect(limiter.hit('a')).toBe(true)
     })
+
+    it('tells whether a key is limited without counting, and forgets it on reset', () => {
+        let now = 0
+        const limiter = new SlidingWindowLimiter(2, 1000, () => now)
+        expect(limiter.isLimited('a')).toBe(false)
+        limiter.hit('a')
+        limiter.hit('a')
+        expect(limiter.isLimited('a')).toBe(true)
+        expect(limiter.isLimited('b')).toBe(false)
+        limiter.reset('a')
+        expect(limiter.isLimited('a')).toBe(false)
+        limiter.hit('a')
+        limiter.hit('a')
+        now = 1000
+        expect(limiter.isLimited('a')).toBe(false)
+    })
 })
 
 describe('bot helpers', () => {

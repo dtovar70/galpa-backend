@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing'
 import request from 'supertest'
 import { AdminCategoriesController } from '../src/categories/categories.controller.js'
 import { CategoriesService } from '../src/categories/categories.service.js'
+import { CategoryDesignTemplateService } from '../src/categories/category-design-template.service.js'
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js'
 
 /**
@@ -20,7 +21,10 @@ describe('Admin categories routes (e2e)', () => {
         vi.clearAllMocks()
         const moduleFixture = await Test.createTestingModule({
             controllers: [AdminCategoriesController],
-            providers: [{ provide: CategoriesService, useValue: service }],
+            providers: [
+                { provide: CategoriesService, useValue: service },
+                { provide: CategoryDesignTemplateService, useValue: {} },
+            ],
         }).compile()
 
         app = moduleFixture.createNestApplication()

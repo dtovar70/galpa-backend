@@ -11,9 +11,13 @@ import type {
     RateSyncFailingEvent,
     RateSyncRecoveredEvent,
 } from '../exchange-rate/exchange-rate.events.js'
-import type { StockConflict } from '../orders/entities/order.entity.js'
+import type { StockConflict, StockConflictLine } from '../orders/entities/order.entity.js'
+import type { ContactMessageReceivedEvent } from '../contact/contact.events.js'
+import { CONTACT_TOPIC_LABELS } from '../contact/contact.constants.js'
+import { firstName } from '../orders/whatsapp/whatsapp-template.js'
 import { stockItemName } from '../products/product-stock.js'
 import type { PaymentSource } from '../orders/entities/order-payment.entity.js'
+import { designColorOf, type Design, type DesignColor } from '../designs/entities/design.entity.js'
 
 /** Moved to common/utils; re-exported for the bot's existing imports. */
 export { formatCaracasDateTime, formatCaracasTime, formatDay }
@@ -57,6 +61,43 @@ export interface MessageItem {
     productName: string
     variantLabel: string | null
     personalization: string | null
+    /** Set when the customer uploaded their own image for the line. */
+    designId?: string | null
+    /** The line's design, when loaded: its garment color (see Design.colorName). */
+    design?: Pick<Design, 'colorName' | 'colorHex'> | null
+}
+
+/** "🎨 Color: <b>Negro</b>" (escaped). Neutral: the product may be a mug, a tee or a keychain. */
+export function garmentColorText(color: DesignColor): string {
+    return `🎨 Color: <b>${escapeHtml(truncate(color.name, MAX_NAME_LENGTH))}</b>`
+}
+
+/** A design's text layer: "🔤 Texto: «Sofía 7» · fuente Pacifico · color #E75F9B" (escaped). */
+export function designTextLine(text: {
+    content: string
+    fontLabel: string
+    color: string
+}): string {
+    const content = truncate(text.content.replace(/\s*\n\s*/g, ' / '), MAX_PERSONALIZATION_LENGTH)
+    return `🔤 Texto: «${escapeHtml(content)}» · fuente ${escapeHtml(text.fontLabel)} · color ${escapeHtml(text.color)}`
+}
+
+/**
+ * Joins caption lines (HTML) while they fit in `limit` visible characters; the optional lines
+ * are dropped from the end first, with a "…" line in their place.
+ */
+export function fitCaption(
+    required: readonly string[],
+    optional: readonly string[],
+    limit = TELEGRAM_CAPTION_LIMIT,
+): string {
+    for (let kept = optional.length; kept >= 0; kept--) {
+        const lines = [...required, ...optional.slice(0, kept)]
+        if (kept < optional.length) lines.push('…')
+        const caption = lines.join('\n')
+        if (visibleLength(caption) <= limit) return caption
+    }
+    return truncate(required.join('\n'), limit)
 }
 
 export interface PaymentMessageData {
@@ -95,9 +136,13 @@ export function itemLines(items: readonly MessageItem[]): string[] {
             ? ` (${escapeHtml(truncate(item.variantLabel, MAX_NAME_LENGTH))})`
             : ''
         const line = `• ${item.quantity} × ${name}${variant}`
+        const color = designColorOf(item.design)
+        const design = item.designId
+            ? `\n   🎨 <b>Diseño propio</b>${color ? `\n   ${garmentColorText(color)}` : ''}`
+            : ''
         return item.personalization
-            ? `${line}\n   <i>“${escapeHtml(truncate(item.personalization, MAX_PERSONALIZATION_LENGTH))}”</i>`
-            : line
+            ? `${line}${design}\n   <i>“${escapeHtml(truncate(item.personalization, MAX_PERSONALIZATION_LENGTH))}”</i>`
+            : `${line}${design}`
     })
     const rest = items.length - MAX_ITEM_LINES
     if (rest > 0) lines.push(`<i>…y ${rest} ${rest === 1 ? 'artículo' : 'artículos'} más</i>`)
@@ -107,7 +152,12 @@ export function itemLines(items: readonly MessageItem[]): string[] {
 /** Unresolved stock conflict lines: "«Taza – 15 oz» pidió 3, hay 1". */
 export function stockConflictText(conflict: StockConflict | null): string | null {
     if (!conflict || conflict.resolvedAt) return null
-    return conflict.lines
+    return stockLinesText(conflict.lines)
+}
+
+/** Stock conflict lines: "«Taza – 15 oz» pidió 3, hay 1" (`available` as given). */
+export function stockLinesText(lines: readonly StockConflictLine[]): string {
+    return lines
         .map(
             (line) =>
                 `«${escapeHtml(truncate(stockItemName(line.productName, line.variantLabel), MAX_NAME_LENGTH))}» pidió ${line.requested}, hay ${line.available}`,
@@ -259,6 +309,35 @@ export function rateSyncRecoveredMessage(event: RateSyncRecoveredEvent): string 
         lines.push('⚠️ Esa tasa sigue vencida: los pedidos siguen pausados.')
     }
     return lines.join('\n')
+}
+
+/** Room left for the customer's text in a contact notice (the header lines are short). */
+const MAX_CONTACT_TEXT_LENGTH = 3500
+
+/**
+ * "📨 Nuevo mensaje de contacto": who wrote, how to answer and the message. Every customer value
+ * is escaped; the text is cut on the raw value so the message stays under Telegram's limit.
+ */
+export function contactMessage(event: ContactMessageReceivedEvent): string {
+    const lines = [
+        '📨 <b>Nuevo mensaje de contacto</b>',
+        `👤 ${escapeHtml(event.fullName)}`,
+        `✉️ ${escapeHtml(event.email)}`,
+    ]
+    if (event.phone) lines.push(`📱 WhatsApp: ${escapeHtml(event.phone)}`)
+    lines.push(
+        `🏷️ ${escapeHtml(CONTACT_TOPIC_LABELS[event.topic])}`,
+        `🗓️ ${formatCaracasDateTime(new Date(event.receivedAt))}`,
+        '',
+        escapeHtml(truncate(event.message, MAX_CONTACT_TEXT_LENGTH)),
+    )
+    return lines.join('\n')
+}
+
+/** Pre-filled text of the "Abrir WhatsApp" button: "Hola Ana, te escribimos de Manada Russo…". */
+export function contactWhatsAppGreeting(fullName: string): string {
+    const name = firstName(fullName)
+    return `Hola${name ? ` ${name}` : ''}, te escribimos de Manada Russo por el mensaje que nos enviaste desde la página. 😊`
 }
 
 export const HELP_TEXT = [

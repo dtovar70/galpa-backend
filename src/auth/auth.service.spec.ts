@@ -1,13 +1,15 @@
 import type { ConfigService } from '@nestjs/config'
-import { UnauthorizedException } from '@nestjs/common'
+import { HttpException, UnauthorizedException } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import argon2 from 'argon2'
 import type { Repository } from 'typeorm'
 import type { AuthUser } from '../common/types/auth-user.js'
 import type { Env } from '../config/env.schema.js'
-import { AuthService } from './auth.service.js'
+import { AuthService, LOGIN_FAILURE_LIMIT } from './auth.service.js'
 import type { User } from './entities/user.entity.js'
 import { Role } from './role.enum.js'
+
+const CHEAP_ARGON2 = { timeCost: 2, memoryCost: 1024, parallelism: 1 }
 
 const USER: AuthUser = {
     id: 'user-1',
@@ -95,6 +97,58 @@ describe('AuthService login and password changes', () => {
         )
         // argon2 ran for both (the real hash, and the dummy one for the unknown email).
         expect(verify).toHaveBeenCalledTimes(2)
+    })
+
+    it('answers 429 after 10 failed logins for an email, without checking the password', async () => {
+        // Cheap argon2 parameters: these tests verify many times.
+        const passwordHash = await argon2.hash('Clave-correcta-1', CHEAP_ARGON2)
+        const { service } = createService(
+            30,
+            30,
+            usersFinding({ ...USER, passwordHash, isActive: true }),
+        )
+        for (let i = 0; i < LOGIN_FAILURE_LIMIT; i++) {
+            await expect(service.validateCredentials(USER.email, 'mala')).rejects.toThrow(
+                UnauthorizedException,
+            )
+        }
+        const verify = vi.spyOn(argon2, 'verify')
+        // Even the right password, and whatever the case/spaces of the email.
+        const blocked = service.validateCredentials(
+            ` ${USER.email.toUpperCase()} `,
+            'Clave-correcta-1',
+        )
+        await expect(blocked).rejects.toBeInstanceOf(HttpException)
+        await expect(blocked).rejects.toMatchObject({
+            status: 429,
+            message: 'Demasiadas solicitudes. Espera un minuto e intenta de nuevo.',
+        })
+        expect(verify).not.toHaveBeenCalled()
+        // Another email is not affected.
+        await expect(service.validateCredentials('otra@example.com', 'mala')).rejects.toThrow(
+            UnauthorizedException,
+        )
+    })
+
+    it('forgets the failures of an email after a successful login', async () => {
+        // Cheap argon2 parameters: these tests verify many times.
+        const passwordHash = await argon2.hash('Clave-correcta-1', CHEAP_ARGON2)
+        const { service } = createService(
+            30,
+            30,
+            usersFinding({ ...USER, passwordHash, isActive: true }),
+        )
+        for (let i = 0; i < LOGIN_FAILURE_LIMIT - 1; i++) {
+            await expect(service.validateCredentials(USER.email, 'mala')).rejects.toThrow()
+        }
+        await expect(
+            service.validateCredentials(USER.email, 'Clave-correcta-1'),
+        ).resolves.toMatchObject({
+            id: USER.id,
+        })
+        await expect(service.validateCredentials(USER.email, 'mala')).rejects.toThrow(
+            UnauthorizedException,
+        )
     })
 
     it('signs the token after a password change dated at the change', async () => {

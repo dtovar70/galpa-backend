@@ -70,6 +70,8 @@ export interface StockConflict {
 @Index('orders_status_idx', ['status'])
 @Index('orders_created_at_idx', ['createdAt'])
 @Index('orders_refund_pending_idx', ['createdAt'], { where: `"refund_status" = 'PENDIENTE'` })
+@Index('orders_idempotency_key_key', ['idempotencyKey'], { unique: true })
+@Check('orders_idempotency_check', `("idempotency_key" IS NULL) = ("idempotency_hash" IS NULL)`)
 @Check(
     'orders_status_check',
     `"status" IN (${ORDER_STATUSES.map((status) => `'${status}'`).join(', ')})`,
@@ -231,6 +233,17 @@ export class Order {
     @ManyToOne(() => User, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
     @JoinColumn({ name: 'refunded_by', foreignKeyConstraintName: 'orders_refunded_by_fkey' })
     refundedBy: Relation<User> | null
+
+    /**
+     * The checkout's `Idempotency-Key` header (unique while set), so a retried checkout returns
+     * this order instead of creating another. Null without the header, or once freed (24 h).
+     */
+    @Column({ name: 'idempotency_key', type: 'varchar', length: 64, nullable: true })
+    idempotencyKey: string | null
+
+    /** SHA-256 (hex) of the checkout body sent with that key (see `checkoutRequestHash`). */
+    @Column({ name: 'idempotency_hash', type: 'varchar', length: 64, nullable: true })
+    idempotencyHash: string | null
 
     @CreateDateColumn({ name: 'created_at', type: 'timestamptz', precision: 3 })
     createdAt: Date

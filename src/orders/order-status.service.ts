@@ -19,6 +19,7 @@ import {
     resolveStockUnit,
     stockItemName,
     stockUnitKey,
+    type LockedStock,
     type StockChange,
 } from '../products/product-stock.js'
 import { OrderItem } from './entities/order-item.entity.js'
@@ -39,6 +40,7 @@ import {
     type OrderRefundUpdatedEvent,
     type OrderStatusChangedEvent,
 } from './orders.events.js'
+import { liveStockConflict, stockConflictProductIds } from './stock-conflict.js'
 
 export const ORDER_NOT_FOUND = 'No encontramos el pedido.'
 /** 409 of a reactivation without enough stock (`lines` lists what is missing). */
@@ -77,13 +79,20 @@ export function actorUserId(actor: OrderActor): string | null {
     return null
 }
 
-function badRequest(field: string, message: string, error: string, code?: string) {
+function badRequest(
+    field: string,
+    message: string,
+    error: string,
+    code?: string,
+    extra: Record<string, unknown> = {},
+) {
     return new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
         ...(code ? { code } : {}),
         message,
         details: [{ field, errors: [error] }],
+        ...extra,
     })
 }
 
@@ -215,13 +224,24 @@ export class OrderStatusService {
             to === 'PAGO_VERIFICADO' && order.stockConflict && !order.stockConflict.resolvedAt
                 ? order.stockConflict
                 : null
-        if (conflictToResolve && options.acknowledgeStockConflict !== true) {
-            throw badRequest(
-                'acknowledgeStockConflict',
-                `Falta stock para este pedido (${describeStockLines(conflictToResolve.lines)}). Confirma que lo entiendes para continuar.`,
-                'Confirma que entiendes que falta stock.',
-                STOCK_CONFLICT_UNACKNOWLEDGED,
-            )
+        // The conflict is a snapshot: decide with the stock there is now, locked here and kept
+        // locked until `takeMissingStock` takes from these same rows (the owner may have
+        // restocked since, and nobody can take it in between).
+        const conflictStock = conflictToResolve
+            ? await lockStock(manager, stockConflictProductIds(conflictToResolve))
+            : null
+        if (conflictToResolve && conflictStock && options.acknowledgeStockConflict !== true) {
+            const live = liveStockConflict(conflictToResolve, conflictStock)
+            if (live.stillShort) {
+                const short = live.lines.filter((line) => line.stillShort)
+                throw badRequest(
+                    'acknowledgeStockConflict',
+                    `Falta stock para este pedido (${describeStockLines(short)}). Confirma que lo entiendes para continuar.`,
+                    'Confirma que entiendes que falta stock.',
+                    STOCK_CONFLICT_UNACKNOWLEDGED,
+                    { lines: short },
+                )
+            }
         }
 
         const now = new Date()
@@ -274,10 +294,11 @@ export class OrderStatusService {
             })
         }
 
-        if (conflictToResolve) {
+        if (conflictToResolve && conflictStock) {
             const resolved = await this.takeMissingStock(
                 manager,
                 conflictToResolve,
+                conflictStock,
                 now,
                 reviewerId,
             )
@@ -476,17 +497,17 @@ export class OrderStatusService {
         }
     }
 
-    /** On confirmation: takes whatever of the missing stock is there now (never below 0). */
+    /**
+     * On confirmation: takes whatever of the missing stock is there now (never below 0), from
+     * the rows the caller locked (`lockStock` over the conflict's products).
+     */
     private async takeMissingStock(
         manager: EntityManager,
         conflict: StockConflict,
+        locked: LockedStock,
         now: Date,
         userId: string | null,
     ): Promise<StockConflict> {
-        const locked = await lockStock(
-            manager,
-            conflict.lines.flatMap((line) => (line.productId ? [line.productId] : [])),
-        )
         const lines: StockConflictLine[] = []
         const taken: StockChange[] = []
         for (const line of conflict.lines) {

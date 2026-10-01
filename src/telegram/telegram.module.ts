@@ -8,6 +8,7 @@ import { TelegramChat } from './entities/telegram-chat.entity.js'
 import { TelegramLinkCode } from './entities/telegram-link-code.entity.js'
 import { TelegramMessage } from './entities/telegram-message.entity.js'
 import { TelegramBotService } from './telegram-bot.service.js'
+import { TelegramContactService } from './telegram-contact.service.js'
 import { TelegramEventsListener } from './telegram-events.listener.js'
 import { TelegramPasswordResetChannel } from './telegram-password-reset.channel.js'
 import { TelegramPaymentsService } from './telegram-payments.service.js'
@@ -36,8 +37,9 @@ import { TelegramWebhookController } from './telegram-webhook.controller.js'
         TelegramEventsListener,
         AdminTelegramService,
         TelegramPasswordResetChannel,
+        TelegramContactService,
     ],
-    // Password recovery sends its codes through the bot.
-    exports: [TelegramPasswordResetChannel],
+    // Password recovery sends its codes through the bot; the contact form checks it can deliver.
+    exports: [TelegramPasswordResetChannel, TelegramContactService],
 })
 export class TelegramModule {}

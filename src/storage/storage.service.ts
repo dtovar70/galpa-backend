@@ -15,8 +15,13 @@ export interface StoredFile {
     publicId: string
 }
 
+/** Folders of the public area: product photos and the categories' design template photos. */
+export const PUBLIC_FOLDERS = ['products', 'design-templates'] as const
+export type PublicFolder = (typeof PUBLIC_FOLDERS)[number]
+
 /** Folders of the private area. Each one is a fixed, known prefix of the stored keys. */
-export type PrivateFolder = 'payment-proofs'
+export const PRIVATE_FOLDERS = ['payment-proofs', 'designs'] as const
+export type PrivateFolder = (typeof PRIVATE_FOLDERS)[number]
 
 export interface StoredPrivateFile {
     /** Opaque storage key; the only way to read or delete the file later. Never a URL. */
@@ -34,7 +39,8 @@ export type PrivateFileAccess =
 /** Image storage backend. Implementations: Cloudinary (production) or local disk (dev). */
 export interface StorageService {
     readonly driver: 'cloudinary' | 'local'
-    upload(image: UploadableImage): Promise<StoredFile>
+    /** Public image, in `folder` (default `products`). */
+    upload(image: UploadableImage, folder?: PublicFolder): Promise<StoredFile>
     delete(publicId: string): Promise<void>
 
     /**

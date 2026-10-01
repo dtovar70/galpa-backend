@@ -16,6 +16,7 @@ import { addDays, caracasDay } from '../common/utils/caracas-date.js'
 import { ContentService } from '../content/content.service.js'
 import { isPaymentConfigured, type PaymentContent } from '../content/content.types.js'
 import { newId } from '../database/id.js'
+import { DesignsService } from '../designs/designs.service.js'
 import { ExchangeRateService } from '../exchange-rate/exchange-rate.service.js'
 import { ProductImage } from '../products/entities/product-image.entity.js'
 import {
@@ -26,7 +27,11 @@ import {
     type LockedStock,
 } from '../products/product-stock.js'
 import { detectImageType } from '../storage/image-type.js'
-import { STORAGE_SERVICE, type StorageService } from '../storage/storage.service.js'
+import {
+    STORAGE_SERVICE,
+    type PrivateFileAccess,
+    type StorageService,
+} from '../storage/storage.service.js'
 import type { CreateOrderDto, OrderItemInputDto } from './dto/create-order.dto.js'
 import { REFERENCE_DIGITS } from './dto/field-names.js'
 import type { SubmitPaymentDto } from './dto/submit-payment.dto.js'
@@ -42,6 +47,12 @@ import {
 } from './order.mapper.js'
 import { amountDifferenceBs, computeTotals, fromCents, unitPriceCents } from './order-pricing.js'
 import { OrderAccessService } from './order-access.service.js'
+import {
+    checkoutRequestHash,
+    IDEMPOTENCY_WINDOW_MS,
+    idempotencyKeyReused,
+    isIdempotencyKeyConflict,
+} from './order-idempotency.js'
 import { CLOSED_STATUSES, type OrderActor } from './order-status.js'
 import {
     ORDER_NOT_FOUND,
@@ -72,6 +83,16 @@ export interface CreatedOrderDto {
     /** The only time the token is returned: the customer's link is `/pedido/<code>?t=<token>`. */
     accessToken: string
     order: PublicOrderDto
+    /**
+     * True when this is the answer to a retried checkout (same `Idempotency-Key` and body): no
+     * new order was created and `accessToken` is a fresh link to the existing one.
+     */
+    replayed: boolean
+}
+
+interface CheckoutIdempotency {
+    key: string
+    hash: string
 }
 
 interface LockedCatalog extends LockedStock {
@@ -130,9 +151,70 @@ export class OrdersService {
         private readonly mobilePrefixes: MobilePrefixesService,
         private readonly access: OrderAccessService,
         @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
+        private readonly designs: DesignsService,
     ) {}
 
-    async create(dto: CreateOrderDto): Promise<CreatedOrderDto> {
+    /**
+     * Checkout. With `idempotencyKey` (see order-idempotency.ts) a retry of the same request
+     * returns the order created the first time instead of creating (and taking stock) again.
+     */
+    async create(dto: CreateOrderDto, idempotencyKey?: string): Promise<CreatedOrderDto> {
+        const idempotency: CheckoutIdempotency | null = idempotencyKey
+            ? { key: idempotencyKey, hash: checkoutRequestHash(dto) }
+            : null
+        // Before any other check: a retry must get its order even if, say, the rate went stale.
+        if (idempotency) {
+            const replayed = await this.replay(idempotency)
+            if (replayed) return replayed
+        }
+        try {
+            return await this.createOrder(dto, idempotency)
+        } catch (error) {
+            // Two requests with the same key raced past the lookup: the second one's
+            // transaction (and its stock) was rolled back; answer with the first one's order.
+            if (idempotency && isIdempotencyKeyConflict(error)) {
+                const replayed = await this.replay(idempotency)
+                if (replayed) return replayed
+            }
+            throw error
+        }
+    }
+
+    /**
+     * The answer for a retried checkout: null when no order holds the key (or it is older than
+     * the window, and is then freed); 409 when the key came with another body.
+     */
+    private async replay(idempotency: CheckoutIdempotency): Promise<CreatedOrderDto | null> {
+        const orders = this.dataSource.getRepository(Order)
+        const existing = await orders.findOne({
+            where: { idempotencyKey: idempotency.key },
+            select: { id: true, code: true, createdAt: true, idempotencyHash: true },
+        })
+        if (!existing) return null
+        if (Date.now() - existing.createdAt.getTime() >= IDEMPOTENCY_WINDOW_MS) {
+            await orders.update(
+                { id: existing.id, idempotencyKey: idempotency.key },
+                { idempotencyKey: null, idempotencyHash: null },
+            )
+            return null
+        }
+        if (existing.idempotencyHash !== idempotency.hash) throw idempotencyKeyReused()
+
+        const { token } = await this.access.issue(existing.id, existing.code, null)
+        const full = await this.loadFull(existing.id)
+        this.logger.log(`Order ${existing.code} returned again for a retried checkout`)
+        return {
+            code: existing.code,
+            accessToken: token,
+            order: toPublicOrder(full, await this.pagoMovil(), await this.catalog.labeler()),
+            replayed: true,
+        }
+    }
+
+    private async createOrder(
+        dto: CreateOrderDto,
+        idempotency: CheckoutIdempotency | null,
+    ): Promise<CreatedOrderDto> {
         // The DTO checked the shape ("0424-1234567"); the operator code must be active.
         const phoneProblem = await this.mobilePrefixes.phoneProblem(dto.phone)
         if (phoneProblem) throw fieldError('phone', phoneProblem)
@@ -154,6 +236,8 @@ export class OrdersService {
         const order = await this.dataSource.transaction(async (manager) => {
             const catalog = await this.lockCatalog(manager, dto.items)
             const lines = this.priceLines(dto.items, catalog)
+            // After the stock checks: a design problem is only reported for lines that can be bought.
+            const designs = await this.designs.lockForOrder(manager, dto.items, new Date())
 
             const totals = computeTotals(
                 lines.map((line) => ({ unitCents: line.unitCents, quantity: line.quantity })),
@@ -201,6 +285,8 @@ export class OrdersService {
                 refundReference: null,
                 refundedAt: null,
                 refundedById: null,
+                idempotencyKey: idempotency?.key ?? null,
+                idempotencyHash: idempotency?.hash ?? null,
                 createdAt: now,
                 updatedAt: now,
             })
@@ -223,9 +309,19 @@ export class OrdersService {
                     lineTotalUsd: fromCents(line.unitCents * line.quantity),
                     personalization: line.personalization,
                     sortOrder: index,
+                    designId: designs.get(index)?.id ?? null,
                 }),
             )
             await manager.insert(OrderItem, created.items)
+            // For the response (the design's garment color), once the rows are written.
+            created.items.forEach((item, index) => {
+                item.design = designs.get(index) ?? null
+            })
+            await this.designs.markAttached(
+                manager,
+                [...designs.values()].map((design) => design.id),
+                now,
+            )
 
             const entry = manager.create(OrderStatusHistory, {
                 id: newId(),
@@ -265,6 +361,7 @@ export class OrdersService {
             code: order.code,
             accessToken: token,
             order: toPublicOrder(order, content.payment, await this.catalog.labeler()),
+            replayed: false,
         }
     }
 
@@ -273,6 +370,16 @@ export class OrdersService {
         const order = await this.findAuthorized(code, token)
         const full = await this.loadFull(order.id)
         return toPublicOrder(full, await this.pagoMovil(), await this.catalog.labeler())
+    }
+
+    /** The preview of one of the order's designs, for its private link (404 otherwise). */
+    async designPreview(
+        code: string,
+        token: string | undefined,
+        designId: string,
+    ): Promise<PrivateFileAccess> {
+        const order = await this.findAuthorized(code, token)
+        return this.designs.previewForOrder(order.id, designId)
     }
 
     async submitPayment(
@@ -476,7 +583,7 @@ export class OrdersService {
     private async loadFull(orderId: string): Promise<Order> {
         const order = await this.dataSource.getRepository(Order).findOne({
             where: { id: orderId },
-            relations: { items: true, payments: true, history: true },
+            relations: { items: { design: true }, payments: true, history: true },
         })
         if (!order) throw new NotFoundException(ORDER_NOT_FOUND)
         return order

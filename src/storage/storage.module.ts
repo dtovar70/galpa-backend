@@ -7,7 +7,8 @@ import { STORAGE_SERVICE, type StorageService } from './storage.service.js'
 
 /**
  * Picks the storage backend at startup: Cloudinary when all CLOUDINARY_* variables are set,
- * otherwise local disk (./uploads, served at /uploads).
+ * otherwise local disk (./uploads, served at /uploads). Production never falls back to local
+ * disk (the env schema already requires Cloudinary there; this is the last line of defense).
  */
 @Global()
 @Module({
@@ -26,6 +27,11 @@ import { STORAGE_SERVICE, type StorageService } from './storage.service.js'
                     return new CloudinaryStorageService({ cloudName, apiKey, apiSecret })
                 }
 
+                if (config.get('NODE_ENV', { infer: true }) === 'production') {
+                    throw new Error(
+                        'Local-disk image storage is not allowed in production: set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET.',
+                    )
+                }
                 if (cloudName || apiKey || apiSecret) {
                     logger.warn('Cloudinary is partially configured; falling back to local disk')
                 }

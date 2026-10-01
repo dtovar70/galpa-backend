@@ -15,6 +15,7 @@ export const ORDER_FIELD = {
     variantId: feminine('La variante'),
     quantity: feminine('La cantidad'),
     personalization: masculine('El texto personalizado'),
+    designId: masculine('El diseño'),
     reference: feminine('La referencia'),
     payerBankCode: masculine('El banco'),
     payerPhone: masculine('El teléfono del pago'),

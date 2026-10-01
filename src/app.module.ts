@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module.js'
 import { PasswordResetModule } from './auth/password-reset/password-reset.module.js'
 import { CatalogsModule } from './catalogs/catalogs.module.js'
 import { CategoriesModule } from './categories/categories.module.js'
+import { TOO_MANY_REQUESTS_MESSAGE } from './common/http/throttle.js'
+import { ContactModule } from './contact/contact.module.js'
 import { ContentModule } from './content/content.module.js'
 import { validateEnv } from './config/env.schema.js'
 import { DatabaseModule } from './database/database.module.js'
@@ -24,10 +26,10 @@ import { UsersModule } from './users/users.module.js'
         ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnv }),
         ThrottlerModule.forRoot({
             throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
-            errorMessage: 'Demasiadas solicitudes. Espera un minuto e intenta de nuevo.',
+            errorMessage: TOO_MANY_REQUESTS_MESSAGE,
         }),
-        // Domain events (order.created, order.payment_submitted, order.status_changed); the Telegram
-        // bot listens to them.
+        // Domain events (order.created, order.payment_submitted, order.status_changed,
+        // contact.message_received); the Telegram bot listens to them.
         EventEmitterModule.forRoot(),
         ScheduleModule.forRoot(),
         DatabaseModule,
@@ -42,6 +44,7 @@ import { UsersModule } from './users/users.module.js'
         TelegramModule,
         UsersModule,
         PasswordResetModule,
+        ContactModule,
     ],
     controllers: [HealthController],
     providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

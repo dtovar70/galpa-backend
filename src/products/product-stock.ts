@@ -43,25 +43,46 @@ export function stockUnitKey(productId: string, variantId: string | null): strin
 }
 
 /** Locks the given products and all their variants (see the lock order above). */
-export async function lockStock(
+export function lockStock(
     manager: EntityManager,
     productIds: readonly string[],
+): Promise<LockedStock> {
+    return loadStock(manager, productIds, true)
+}
+
+/**
+ * The same rows as `lockStock`, without locking them: for what is only shown (the admin order
+ * page, a Telegram question). A decision that changes stock must use `lockStock`.
+ */
+export function readStock(
+    manager: EntityManager,
+    productIds: readonly string[],
+): Promise<LockedStock> {
+    return loadStock(manager, productIds, false)
+}
+
+async function loadStock(
+    manager: EntityManager,
+    productIds: readonly string[],
+    lock: boolean,
 ): Promise<LockedStock> {
     const ids = [...new Set(productIds)].sort()
     if (!ids.length) return { products: new Map(), variants: new Map() }
 
-    const products = await manager
+    const productQuery = manager
         .createQueryBuilder(Product, 'product')
-        .setLock('pessimistic_write')
         .where('product.id IN (:...ids)', { ids })
         .orderBy('product.id', 'ASC')
-        .getMany()
-    const variants = await manager
+    const variantQuery = manager
         .createQueryBuilder(ProductVariant, 'variant')
-        .setLock('pessimistic_write')
         .where('variant.productId IN (:...productIds)', { productIds: ids })
         .orderBy('variant.id', 'ASC')
-        .getMany()
+    if (lock) {
+        productQuery.setLock('pessimistic_write')
+        variantQuery.setLock('pessimistic_write')
+    }
+    const products = await productQuery.getMany()
+    const variants = await variantQuery.getMany()
 
     const byProduct = new Map<string, ProductVariant[]>()
     for (const variant of [...variants].sort(

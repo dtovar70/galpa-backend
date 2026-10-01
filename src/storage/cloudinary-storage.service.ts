@@ -2,6 +2,7 @@ import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary'
 import type {
     PrivateFileAccess,
     PrivateFolder,
+    PublicFolder,
     StorageService,
     StoredFile,
     StoredPrivateFile,
@@ -14,12 +15,13 @@ export interface CloudinaryCredentials {
     apiSecret: string
 }
 
-const FOLDER = 'manada-russo/products'
+const PUBLIC_ROOT = 'manada-russo'
 const PRIVATE_ROOT = 'manada-russo/private'
 /** Lifetime of the signed URL an admin is redirected to when opening a private file. */
 const PRIVATE_URL_TTL_SECONDS = 5 * 60
 /** `<folder>/<public_id>.<format>`, as built by `uploadPrivate`. */
-const PRIVATE_KEY = /^manada-russo\/private\/payment-proofs\/[A-Za-z0-9_-]+\.(jpg|png|webp)$/
+const PRIVATE_KEY =
+    /^manada-russo\/private\/(payment-proofs|designs)\/[A-Za-z0-9_-]+\.(jpg|png|webp)$/
 
 function uploadBuffer(
     buffer: Buffer,
@@ -58,8 +60,16 @@ export class CloudinaryStorageService implements StorageService {
         })
     }
 
-    async upload(image: UploadableImage): Promise<StoredFile> {
-        const result = await uploadBuffer(image.buffer, { folder: FOLDER, resource_type: 'image' })
+    /**
+     * Public delivery (`res.cloudinary.com`) answers with `Access-Control-Allow-Origin: *`, so
+     * the storefront can draw these images on a canvas (loaded with `crossOrigin="anonymous"`)
+     * and still export it; the design editor relies on this for the template photos.
+     */
+    async upload(image: UploadableImage, folder: PublicFolder = 'products'): Promise<StoredFile> {
+        const result = await uploadBuffer(image.buffer, {
+            folder: `${PUBLIC_ROOT}/${folder}`,
+            resource_type: 'image',
+        })
         return { url: result.secure_url, publicId: result.public_id }
     }
 

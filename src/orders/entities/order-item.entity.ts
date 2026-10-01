@@ -9,6 +9,7 @@ import {
     type Relation,
 } from 'typeorm'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
+import { Design } from '../../designs/entities/design.entity.js'
 import { Product } from '../../products/entities/product.entity.js'
 import { ORDER_LIMITS } from '../dto/field-names.js'
 import { Order } from './order.entity.js'
@@ -20,6 +21,7 @@ import { Order } from './order.entity.js'
  */
 @Entity({ name: 'order_items' })
 @Index('order_items_order_id_idx', ['orderId'])
+@Index('order_items_design_id_key', ['designId'], { unique: true })
 @Check('order_items_quantity_check', `"quantity" > 0`)
 @Check(
     'order_items_personalization_length_check',
@@ -87,4 +89,15 @@ export class OrderItem {
 
     @Column({ name: 'sort_order', type: 'integer', default: 0 })
     sortOrder: number
+
+    /**
+     * The customer's own image for this line ("Diseño propio"). One design per line and one line
+     * per design (unique). RESTRICT: an attached design is never cleaned up.
+     */
+    @Column({ name: 'design_id', type: 'text', nullable: true })
+    designId: string | null
+
+    @ManyToOne(() => Design, { onDelete: 'RESTRICT', onUpdate: 'CASCADE', nullable: true })
+    @JoinColumn({ name: 'design_id', foreignKeyConstraintName: 'order_items_design_id_fkey' })
+    design?: Relation<Design> | null
 }

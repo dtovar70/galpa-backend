@@ -1,11 +1,18 @@
 import {
+    contactMessage,
+    contactWhatsAppGreeting,
+    designTextLine,
     escapeHtml,
+    fitCaption,
+    garmentColorText,
+    itemLines,
     formatCaracasDateTime,
     formatCaracasTime,
     formatDay,
     paymentMessage,
     rateSyncFailingMessage,
     rateSyncRecoveredMessage,
+    TELEGRAM_TEXT_LIMIT,
     truncate,
     visibleLength,
     type PaymentMessageData,
@@ -49,6 +56,46 @@ describe('telegram-format', () => {
         expect(truncate('  abcdef  ', 4)).toBe('abc…')
         expect(truncate('🐾🐾🐾', 3)).toBe('🐾🐾🐾')
         expect(visibleLength('<b>a &amp; b</b>')).toBe(5)
+    })
+
+    it('marks the lines with an own design', () => {
+        const [plain, designed, both] = itemLines([
+            { quantity: 1, productName: 'Taza', variantLabel: null, personalization: null },
+            {
+                quantity: 2,
+                productName: 'Franela',
+                variantLabel: 'M',
+                personalization: null,
+                designId: 'd1',
+            },
+            {
+                quantity: 1,
+                productName: 'Llavero',
+                variantLabel: null,
+                personalization: 'Luna',
+                designId: 'd2',
+            },
+        ])
+        expect(plain).toBe('• 1 × Taza')
+        expect(designed).toBe('• 2 × Franela (M)\n   🎨 <b>Diseño propio</b>')
+        expect(both).toBe('• 1 × Llavero\n   🎨 <b>Diseño propio</b>\n   <i>“Luna”</i>')
+    })
+
+    it('names the garment color of a design', () => {
+        const [line] = itemLines([
+            {
+                quantity: 1,
+                productName: 'Franela',
+                variantLabel: 'M',
+                personalization: null,
+                designId: 'd1',
+                design: { colorName: 'Negro <b>', colorHex: '#1F2937' },
+            },
+        ])
+        expect(line).toBe(
+            '• 1 × Franela (M)\n   🎨 <b>Diseño propio</b>\n   🎨 Color: <b>Negro &lt;b&gt;</b>',
+        )
+        expect(garmentColorText({ name: 'Blanco', hex: '#FFFFFF' })).toBe('🎨 Color: <b>Blanco</b>')
     })
 
     it('formats Caracas dates and times', () => {
@@ -121,6 +168,16 @@ describe('telegram-format', () => {
     it('appends the resolution line', () => {
         expect(paymentMessage(DATA, { resolution: '✅ Hecho' }).endsWith('\n\n✅ Hecho')).toBe(true)
     })
+
+    it('lists a design text and keeps captions within the limit', () => {
+        expect(
+            designTextLine({ content: 'Sofía\n<7>', fontLabel: 'Baloo 2', color: '#E75F9B' }),
+        ).toBe('🔤 Texto: «Sofía / &lt;7&gt;» · fuente Baloo 2 · color #E75F9B')
+        expect(fitCaption(['a', 'b'], ['c'])).toBe('a\nb\nc')
+        const long = 'x'.repeat(600)
+        expect(fitCaption(['head'], [long, long])).toBe(`head\n${long}\n…`)
+        expect(visibleLength(fitCaption(['head'], [long, long]))).toBeLessThanOrEqual(1024)
+    })
 })
 
 describe('rate sync alerts', () => {
@@ -172,5 +229,44 @@ describe('rate sync alerts', () => {
         expect(text).toContain('La tasa del BCV se volvió a obtener')
         expect(text).toContain('36,5000 Bs/$')
         expect(text).not.toContain('pausados')
+    })
+})
+
+describe('contactMessage', () => {
+    const EVENT = {
+        fullName: 'Ana & <Co>',
+        email: 'ana@example.com',
+        phone: '0414-1234567',
+        topic: 'personalizado' as const,
+        message: 'Hola <b>equipo</b> & amigos',
+        receivedAt: '2026-09-25T14:30:00.000Z',
+    }
+
+    it('renders who wrote, the topic label and the escaped message', () => {
+        const text = contactMessage(EVENT)
+        expect(text.split('\n').slice(0, 5)).toEqual([
+            '📨 <b>Nuevo mensaje de contacto</b>',
+            '👤 Ana &amp; &lt;Co&gt;',
+            '✉️ ana@example.com',
+            '📱 WhatsApp: 0414-1234567',
+            '🏷️ Quiero un diseño personalizado',
+        ])
+        expect(text).toContain('🗓️ 25/09/2026')
+        expect(text.endsWith('Hola &lt;b&gt;equipo&lt;/b&gt; &amp; amigos')).toBe(true)
+    })
+
+    it('leaves the WhatsApp line out without a phone', () => {
+        expect(contactMessage({ ...EVENT, phone: null })).not.toContain('WhatsApp')
+    })
+
+    it('stays under the Telegram limit with a very long message', () => {
+        const text = contactMessage({ ...EVENT, message: '<'.repeat(10_000) })
+        expect(visibleLength(text)).toBeLessThanOrEqual(TELEGRAM_TEXT_LIMIT)
+        expect(text).toContain('…')
+    })
+
+    it('greets the customer by first name', () => {
+        expect(contactWhatsAppGreeting('  Ana María Pérez ')).toMatch(/^Hola Ana, te escribimos/)
+        expect(contactWhatsAppGreeting('')).toMatch(/^Hola, te escribimos/)
     })
 })

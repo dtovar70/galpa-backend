@@ -65,6 +65,13 @@ export class OrderItemInputDto {
         message: msg.maxLength(FIELD.personalization, LIMITS.personalization),
     })
     personalization?: string
+
+    /** The customer's own image for this line (`POST /designs`); used once, by one line. */
+    @IsOptional()
+    @Transform(trimOrUndefined)
+    @IsString({ message: msg.text(FIELD.designId) })
+    @MaxLength(80, { message: msg.maxLength(FIELD.designId, 80) })
+    designId?: string
 }
 
 /** Body of `POST /orders`: the checkout form plus the cart lines. */

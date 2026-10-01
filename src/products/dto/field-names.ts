@@ -29,4 +29,6 @@ export const FIELD = {
     page: feminine('La página'),
     pageSize: masculine('El tamaño de página'),
     limit: masculine('El límite'),
+    productId: masculine('El producto'),
+    availabilityItems: feminine('La lista de productos'),
 } as const

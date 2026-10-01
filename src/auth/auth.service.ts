@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common'
+import {
+    BadRequestException,
+    HttpException,
+    HttpStatus,
+    Injectable,
+    UnauthorizedException,
+} from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { InjectRepository } from '@nestjs/typeorm'
@@ -11,7 +17,9 @@ import type {
     JwtPayload,
     SessionToken,
 } from '../common/types/auth-user.js'
+import { TOO_MANY_REQUESTS_MESSAGE } from '../common/http/throttle.js'
 import type { Env } from '../config/env.schema.js'
+import { SlidingWindowLimiter } from '../telegram/rate-limiter.js'
 import { toAuthUser } from './auth.constants.js'
 import { User } from './entities/user.entity.js'
 import {
@@ -24,6 +32,13 @@ import {
 
 const INVALID_CREDENTIALS = 'Correo o contraseña incorrectos.'
 export const USER_NOT_FOUND = 'No encontramos ese usuario.'
+
+/**
+ * Failed logins per email (any email, existing or not): 10 every 15 minutes. The IP throttler
+ * stops one address; this stops a password guess spread over many addresses.
+ */
+export const LOGIN_FAILURE_LIMIT = 10
+export const LOGIN_FAILURE_WINDOW_MS = 15 * 60_000
 
 /** A 400 with the usual `details` shape, pinned on one field of the form. */
 export function fieldError(field: string, message: string): BadRequestException {
@@ -41,6 +56,10 @@ export class AuthService {
     /** Hash verified when the email does not exist, so both paths take similar time. */
     private dummyHash?: Promise<string>
     readonly settings: SessionSettings
+    private readonly loginFailures = new SlidingWindowLimiter(
+        LOGIN_FAILURE_LIMIT,
+        LOGIN_FAILURE_WINDOW_MS,
+    )
 
     constructor(
         @InjectRepository(User) private readonly users: Repository<User>,
@@ -52,13 +71,19 @@ export class AuthService {
 
     /**
      * Unknown email, wrong password and deactivated account all get the same error after the
-     * same argon2 work, so the answer never tells which accounts exist or are active.
+     * same argon2 work, so the answer never tells which accounts exist or are active. Past
+     * LOGIN_FAILURE_LIMIT failures for an email, every attempt on it gets the throttler's 429
+     * (before any password check) until the window slides.
      */
     async validateCredentials(email: string, password: string): Promise<User> {
+        const normalized = email.trim().toLowerCase()
+        if (this.loginFailures.isLimited(normalized)) {
+            throw new HttpException(TOO_MANY_REQUESTS_MESSAGE, HttpStatus.TOO_MANY_REQUESTS)
+        }
         const user = await this.users
             .createQueryBuilder('user')
             .addSelect('user.passwordHash')
-            .where('LOWER(user.email) = :email', { email: email.trim().toLowerCase() })
+            .where('LOWER(user.email) = :email', { email: normalized })
             .getOne()
 
         this.dummyHash ??= argon2.hash('manada-russo-timing-guard')
@@ -66,8 +91,10 @@ export class AuthService {
         const valid = await argon2.verify(hash, password).catch(() => false)
 
         if (!user || !valid || !user.isActive) {
+            this.loginFailures.hit(normalized)
             throw new UnauthorizedException(INVALID_CREDENTIALS)
         }
+        this.loginFailures.reset(normalized)
         return user
     }
 

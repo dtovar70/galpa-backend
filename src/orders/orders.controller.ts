@@ -3,6 +3,7 @@ import {
     Controller,
     Get,
     Header,
+    Headers,
     HttpCode,
     HttpStatus,
     Param,
@@ -17,6 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express'
 import { Throttle } from '@nestjs/throttler'
 import type { Response } from 'express'
 import { Public } from '../common/decorators/public.decorator.js'
+import { sendPrivateFile } from '../designs/send-private-file.js'
 import { CreateOrderDto } from './dto/create-order.dto.js'
 import { OrderAccessQueryDto, OrderLookupDto } from './dto/order-access.dto.js'
 import { ORDER_LOOKUP_REQUESTED, OrderLookupService } from './emails/order-lookup.service.js'
@@ -26,6 +28,7 @@ import { OrdersService, type CreatedOrderDto } from './orders.service.js'
 import { sendReceipt } from './receipt/send-receipt.js'
 import { ReceiptService } from './receipt/receipt.service.js'
 import { PROOF_FIELD, PROOF_UPLOAD_OPTIONS, ProofUploadErrorsFilter } from './payment-upload.js'
+import { IDEMPOTENCY_KEY_HEADER, parseIdempotencyKey } from './order-idempotency.js'
 
 /** Per client IP: 10 new orders / payment proofs every 10 minutes. */
 const WRITE_LIMIT = { default: { limit: 10, ttl: 10 * 60_000 } }
@@ -47,10 +50,22 @@ export class OrdersController {
         private readonly lookups: OrderLookupService,
     ) {}
 
+    /**
+     * Checkout: 201 with the new order. With an `Idempotency-Key` header, a retry with the same
+     * key and body answers 200 with the same order (`replayed: true`, fresh `accessToken`) and
+     * a different body 409 `IDEMPOTENCY_KEY_REUSED` (see order-idempotency.ts).
+     */
     @Post()
     @Throttle(WRITE_LIMIT)
-    create(@Body() dto: CreateOrderDto): Promise<CreatedOrderDto> {
-        return this.orders.create(dto)
+    @Header('Cache-Control', 'no-store')
+    async create(
+        @Body() dto: CreateOrderDto,
+        @Headers(IDEMPOTENCY_KEY_HEADER) idempotencyKey: string | undefined,
+        @Res({ passthrough: true }) res: Response,
+    ): Promise<CreatedOrderDto> {
+        const created = await this.orders.create(dto, parseIdempotencyKey(idempotencyKey))
+        if (created.replayed) res.status(HttpStatus.OK)
+        return created
     }
 
     /**
@@ -80,6 +95,17 @@ export class OrdersController {
         @Res() res: Response,
     ): Promise<void> {
         sendReceipt(res, await this.receipts.forCustomer(code, query.t))
+    }
+
+    /** The preview of a line's own design ("Diseño propio"), for the order's private link. */
+    @Get(':code/designs/:designId/preview')
+    async designPreview(
+        @Param('code') code: string,
+        @Param('designId') designId: string,
+        @Query() query: OrderAccessQueryDto,
+        @Res() res: Response,
+    ): Promise<void> {
+        sendPrivateFile(res, await this.orders.designPreview(code, query.t, designId))
     }
 
     @Get(':code')

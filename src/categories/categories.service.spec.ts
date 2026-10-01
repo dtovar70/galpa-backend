@@ -7,6 +7,7 @@ import {
     CategoriesService,
     categoryInUseMessage,
 } from './categories.service.js'
+import type { CategoryDesignTemplate } from './entities/category-design-template.entity.js'
 import type { Category } from './entities/category.entity.js'
 
 function uniqueViolation(): QueryFailedError {
@@ -30,9 +31,11 @@ function setup(options: { exists?: boolean; productCount?: number; maxSortOrder?
     const products = {
         countBy: vi.fn().mockResolvedValue(options.productCount ?? 0),
     }
+    const templates = { find: vi.fn().mockResolvedValue([]) }
     const service = new CategoriesService(
         categories as unknown as Repository<Category>,
         products as unknown as Repository<Product>,
+        templates as unknown as Repository<CategoryDesignTemplate>,
     )
     return { service, categories, products }
 }
@@ -145,9 +148,11 @@ function setupReorder(existing: string[]) {
             getRawMany: vi.fn().mockResolvedValue([]),
         })),
     }
+    const templates = { find: vi.fn().mockResolvedValue([]) }
     const service = new CategoriesService(
         categories as unknown as Repository<Category>,
         products as unknown as Repository<Product>,
+        templates as unknown as Repository<CategoryDesignTemplate>,
     )
     return { service, categories, manager }
 }

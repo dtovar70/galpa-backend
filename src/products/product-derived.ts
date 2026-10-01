@@ -19,11 +19,15 @@ export function computeRelevanceScore(source: Pick<DerivedSource, 'tags'>): numb
     return bestsellerBoost + newBoost
 }
 
-/** Accent-insensitive haystack for search (name, description, printText, tags). */
+/** Words a customer may type for a tag: the store shows `bestseller` as "favorito". */
+const TAG_SEARCH_ALIASES: Record<string, string> = { bestseller: 'favorito' }
+
+/** Accent-insensitive haystack for search (name, description, printText, tags and aliases). */
 export function computeSearchText(source: DerivedSource): string {
-    return normalizeText(
-        [source.name, source.description, source.printText, ...source.tags].join(' '),
+    const tagWords = source.tags.flatMap((tag) =>
+        TAG_SEARCH_ALIASES[tag] ? [tag, TAG_SEARCH_ALIASES[tag]] : [tag],
     )
+    return normalizeText([source.name, source.description, source.printText, ...tagWords].join(' '))
 }
 
 export function computeDerivedFields(source: DerivedSource): {

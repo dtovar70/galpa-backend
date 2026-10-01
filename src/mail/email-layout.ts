@@ -19,8 +19,25 @@ export type EmailBlock =
     /** Label/value pairs (payment data, totals). `strong` highlights a row (the amount to pay). */
     | { kind: 'rows'; title?: string; rows: { label: string; value: string; strong?: boolean }[] }
     /** Ordered lines: a title, detail lines below it and an amount on the right. */
-    | { kind: 'items'; items: { title: string; details: string[]; amount: string }[] }
+    | { kind: 'items'; items: { title: string; details: EmailItemDetail[]; amount: string }[] }
     | { kind: 'divider' }
+
+/** A detail line of an item; with `swatch` (`#RRGGBB`) a small color dot precedes it. */
+export type EmailItemDetail = string | { text: string; swatch: string }
+
+const SWATCH_PATTERN = /^#[0-9A-Fa-f]{6}$/
+
+function detailText(detail: EmailItemDetail): string {
+    return typeof detail === 'string' ? detail : detail.text
+}
+
+function detailHtml(detail: EmailItemDetail): string {
+    const swatch =
+        typeof detail !== 'string' && SWATCH_PATTERN.test(detail.swatch)
+            ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${detail.swatch};border:1px solid ${COLOR.line};vertical-align:middle;margin-right:6px;"></span>`
+            : ''
+    return `${swatch}${escapeHtml(detailText(detail))}`
+}
 
 export interface EmailLayoutInput {
     brandName: string
@@ -125,7 +142,7 @@ function blockHtml(block: EmailBlock): string {
                     const details = item.details
                         .map(
                             (detail) =>
-                                `<br><span style="font-size:13px;color:${COLOR.inkSoft};">${escapeHtml(detail)}</span>`,
+                                `<br><span style="font-size:13px;color:${COLOR.inkSoft};">${detailHtml(detail)}</span>`,
                         )
                         .join('')
                     return `<tr><td valign="top" style="padding:10px 12px 10px 0;border-bottom:1px solid ${COLOR.line};font-size:14px;color:${COLOR.ink};word-break:break-word;"><strong>${escapeHtml(item.title)}</strong>${details}</td><td valign="top" align="right" style="padding:10px 0;border-bottom:1px solid ${COLOR.line};font-size:14px;color:${COLOR.ink};white-space:nowrap;">${escapeHtml(item.amount)}</td></tr>`
@@ -156,9 +173,10 @@ function blockText(block: EmailBlock): string {
         case 'items':
             return block.items
                 .map((item) =>
-                    [`- ${item.title} — ${item.amount}`, ...item.details.map((d) => `  ${d}`)].join(
-                        '\n',
-                    ),
+                    [
+                        `- ${item.title} — ${item.amount}`,
+                        ...item.details.map((d) => `  ${detailText(d)}`),
+                    ].join('\n'),
                 )
                 .join('\n')
         case 'divider':

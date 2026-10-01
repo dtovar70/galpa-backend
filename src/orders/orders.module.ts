@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { TypeOrmModule } from '@nestjs/typeorm'
 import { CatalogsModule } from '../catalogs/catalogs.module.js'
 import { ContentModule } from '../content/content.module.js'
+import { DesignsModule } from '../designs/designs.module.js'
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module.js'
 import { MailModule } from '../mail/mail.module.js'
 import { AdminOrdersController } from './admin-orders.controller.js'
@@ -37,6 +38,7 @@ import { OrderWhatsAppService } from './whatsapp/order-whatsapp.service.js'
         ContentModule,
         ExchangeRateModule,
         MailModule,
+        DesignsModule,
     ],
     controllers: [OrdersController, AdminOrdersController],
     providers: [
@@ -52,7 +54,8 @@ import { OrderWhatsAppService } from './whatsapp/order-whatsapp.service.js'
         OrderLookupService,
     ],
     // The Telegram bot (Phase 4) calls OrderStatusService.transition() like the admin API, reads
-    // payment proofs through AdminOrdersService and builds WhatsApp reminders.
-    exports: [OrderStatusService, AdminOrdersService, OrderWhatsAppService],
+    // payment proofs through AdminOrdersService and builds WhatsApp reminders. It also forwards
+    // the customers' design previews (DesignsService).
+    exports: [OrderStatusService, AdminOrdersService, OrderWhatsAppService, DesignsModule],
 })
 export class OrdersModule {}

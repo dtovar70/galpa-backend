@@ -1,9 +1,25 @@
-import { Controller, Get, Param, Query } from '@nestjs/common'
+import {
+    Body,
+    Controller,
+    Get,
+    Header,
+    HttpCode,
+    HttpStatus,
+    Param,
+    Post,
+    Query,
+} from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import { Public } from '../common/decorators/public.decorator.js'
 import { CatalogService } from './catalog.service.js'
+import { AvailabilityQueryDto } from './dto/availability.dto.js'
 import { CatalogQueryDto } from './dto/catalog-query.dto.js'
 import { FeaturedQueryDto, RelatedQueryDto } from './dto/limit-query.dto.js'
+import type { AvailabilityDto } from './product-availability.js'
 import type { Paginated, PublicProductDto } from './product.mapper.js'
+
+/** Per client IP: 60 availability checks a minute (the cart asks on open and on focus). */
+const AVAILABILITY_LIMIT = { default: { limit: 60, ttl: 60_000 } }
 
 @Public()
 @Controller('products')
@@ -19,6 +35,18 @@ export class CatalogController {
     @Get('featured')
     featured(@Query() query: FeaturedQueryDto): Promise<PublicProductDto[]> {
         return this.catalog.featured(query.limit)
+    }
+
+    /**
+     * Live stock of the cart lines, in request order (a POST so up to 50 lines fit in the body).
+     * Never cached: the answer changes with every order.
+     */
+    @Post('availability')
+    @HttpCode(HttpStatus.OK)
+    @Throttle(AVAILABILITY_LIMIT)
+    @Header('Cache-Control', 'no-store')
+    async availability(@Body() dto: AvailabilityQueryDto): Promise<{ items: AvailabilityDto[] }> {
+        return { items: await this.catalog.availability(dto.items) }
     }
 
     @Get(':slug')

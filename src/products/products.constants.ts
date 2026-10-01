@@ -24,4 +24,9 @@ export const PRODUCT_MAX_HIGHLIGHTS = 6
 export const MAX_IMAGES_PER_UPLOAD = 8
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
+/** `POST /products/availability`: cart lines per request (the checkout allows 50 lines). */
+export const AVAILABILITY_MAX_ITEMS = 50
+/** Longest product or variant id accepted there (the same limit as the order lines). */
+export const AVAILABILITY_ID_MAX_LENGTH = 80
+
 export const PRODUCT_NOT_FOUND = 'No encontramos el producto solicitado.'

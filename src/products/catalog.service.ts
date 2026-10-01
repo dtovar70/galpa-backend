@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
+import { InjectRepository } from '@nestjs/typeorm'
+import { In, Repository } from 'typeorm'
 import { buildCatalogConditions, CATALOG_ORDER_BY, PRODUCT_ALIAS } from './catalog-query.js'
+import type { AvailabilityItemDto } from './dto/availability.dto.js'
 import type { CatalogQueryDto } from './dto/catalog-query.dto.js'
+import { ProductVariant } from './entities/product-variant.entity.js'
+import { Product } from './entities/product.entity.js'
+import { resolveAvailability, type AvailabilityDto } from './product-availability.js'
 import { ProductRepository } from './product.repository.js'
 import { toPublicProduct, type Paginated, type PublicProductDto } from './product.mapper.js'
 import { FEATURED_LIMIT, PRODUCT_NOT_FOUND, RELATED_LIMIT } from './products.constants.js'
@@ -10,7 +16,30 @@ const ACTIVE = { clause: `${PRODUCT_ALIAS}.isActive = :isActive`, params: { isAc
 /** Read-only storefront catalog. Only active products are exposed. */
 @Injectable()
 export class CatalogService {
-    constructor(private readonly products: ProductRepository) {}
+    constructor(
+        private readonly products: ProductRepository,
+        @InjectRepository(Product) private readonly productRows: Repository<Product>,
+        @InjectRepository(ProductVariant) private readonly variantRows: Repository<ProductVariant>,
+    ) {}
+
+    /**
+     * Live stock of cart lines (the cart keeps no stock of its own). Two indexed reads, whatever
+     * the number of lines; inactive products are reported too, so the cart can say why.
+     */
+    async availability(items: readonly AvailabilityItemDto[]): Promise<AvailabilityDto[]> {
+        const productIds = [...new Set(items.map((item) => item.productId))]
+        const [products, variants] = await Promise.all([
+            this.productRows.find({
+                where: { id: In(productIds) },
+                select: { id: true, stock: true, isActive: true },
+            }),
+            this.variantRows.find({
+                where: { productId: In(productIds) },
+                select: { id: true, productId: true, stock: true },
+            }),
+        ])
+        return resolveAvailability(items, products, variants)
+    }
 
     async list(query: CatalogQueryDto): Promise<Paginated<PublicProductDto>> {
         const page = await this.products.paginate(

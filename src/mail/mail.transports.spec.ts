@@ -1,3 +1,4 @@
+import { createServer, type AddressInfo, type Server } from 'node:net'
 import type { ConfigService } from '@nestjs/config'
 import type { Env } from '../config/env.schema.js'
 import {
@@ -93,5 +94,106 @@ describe('mail transports', () => {
         expect(resend.delivers).toBe(true)
         const log = createMailTransport(config({ NODE_ENV: 'production', MAIL_DRIVER: 'log' }))
         expect(log.delivers).toBe(false)
+    })
+})
+
+/**
+ * The smallest SMTP server nodemailer can talk to (no STARTTLS, no AUTH): records the envelope
+ * and the DATA of each message.
+ */
+function fakeSmtpServer(): Promise<{
+    server: Server
+    port: number
+    messages: { from: string; to: string[]; data: string }[]
+}> {
+    const messages: { from: string; to: string[]; data: string }[] = []
+    const server = createServer((socket) => {
+        let buffer = ''
+        let inData = false
+        let current = { from: '', to: [] as string[], data: '' }
+        socket.write('220 fake.smtp ESMTP\r\n')
+        socket.on('data', (chunk) => {
+            buffer += chunk.toString('utf8')
+            let newline: number
+            while ((newline = buffer.indexOf('\r\n')) >= 0) {
+                const line = buffer.slice(0, newline)
+                buffer = buffer.slice(newline + 2)
+                if (inData) {
+                    if (line === '.') {
+                        inData = false
+                        messages.push(current)
+                        current = { from: '', to: [], data: '' }
+                        socket.write('250 OK queued\r\n')
+                    } else {
+                        current.data += `${line}\n`
+                    }
+                    continue
+                }
+                const command = line.slice(0, 4).toUpperCase()
+                if (command === 'EHLO' || command === 'HELO') {
+                    socket.write('250-fake.smtp\r\n250 8BITMIME\r\n')
+                } else if (command === 'MAIL') {
+                    current.from = line.replace(/^MAIL FROM:\s*/i, '').replace(/\s.*$/, '')
+                    socket.write('250 OK\r\n')
+                } else if (command === 'RCPT') {
+                    current.to.push(line.replace(/^RCPT TO:\s*/i, '').replace(/\s.*$/, ''))
+                    socket.write('250 OK\r\n')
+                } else if (command === 'DATA') {
+                    inData = true
+                    socket.write('354 End data with <CR><LF>.<CR><LF>\r\n')
+                } else if (command === 'QUIT') {
+                    socket.end('221 Bye\r\n')
+                } else {
+                    socket.write('250 OK\r\n')
+                }
+            }
+        })
+    })
+    return new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+            resolve({ server, port: (server.address() as AddressInfo).port, messages })
+        })
+    })
+}
+
+describe('SmtpMailTransport (nodemailer)', () => {
+    let smtp: Awaited<ReturnType<typeof fakeSmtpServer>>
+
+    beforeEach(async () => {
+        smtp = await fakeSmtpServer()
+    })
+
+    afterEach(async () => {
+        await new Promise((resolve) => smtp.server.close(resolve))
+    })
+
+    it('delivers the message with the sender, reply-to and both bodies', async () => {
+        const transport = new SmtpMailTransport(
+            { host: '127.0.0.1', port: smtp.port },
+            { from: 'Tienda <pedidos@example.com>', replyTo: 'hola@example.com' },
+        )
+        await transport.send(MESSAGE)
+
+        expect(smtp.messages).toHaveLength(1)
+        const [sent] = smtp.messages
+        expect(sent!.from).toBe('<pedidos@example.com>')
+        expect(sent!.to).toEqual(['<ana@example.com>'])
+        expect(sent!.data).toMatch(/^From: Tienda <pedidos@example\.com>$/m)
+        expect(sent!.data).toMatch(/^Reply-To: hola@example\.com$/m)
+        expect(sent!.data).toMatch(/^To: ana@example\.com$/m)
+        expect(sent!.data).toMatch(/^Subject: Recibimos tu pedido MR-000001$/m)
+        expect(sent!.data).toContain('text/plain')
+        expect(sent!.data).toContain('text/html')
+    })
+
+    it('fails when the server is unreachable', async () => {
+        await new Promise((resolve) => smtp.server.close(resolve))
+        smtp.server = createServer()
+        smtp.server.listen(0)
+        const transport = new SmtpMailTransport(
+            { host: '127.0.0.1', port: smtp.port },
+            { from: 'pedidos@example.com', replyTo: undefined },
+        )
+        await expect(transport.send(MESSAGE)).rejects.toThrow()
     })
 })

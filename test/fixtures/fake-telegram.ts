@@ -112,7 +112,8 @@ export interface ApiCall {
 
 /**
  * A fake Bot API server: records every call and answers like Telegram. Files uploaded with
- * multipart (sendPhoto) are recorded with their fields; the file part becomes `photoBytes`.
+ * multipart (sendPhoto, sendDocument) are recorded with their fields; the file part becomes
+ * `photoBytes` (and its name `fileName`).
  */
 export class FakeTelegramServer {
     readonly calls: ApiCall[] = []
@@ -206,6 +207,11 @@ export class FakeTelegramServer {
                     photo: [{ file_id: 'photo-file-1', file_unique_id: 'u1', width: 1, height: 1 }],
                     caption: payload.caption,
                 })
+            case 'sendDocument':
+                return message({
+                    document: { file_id: `doc-file-${this.nextMessageId}`, file_unique_id: 'd' },
+                    caption: payload.caption,
+                })
             case 'editMessageText':
             case 'editMessageCaption':
             case 'editMessageReplyMarkup':
@@ -231,8 +237,10 @@ function parseMultipart(body: Buffer, boundary: string): Row {
             // Strip the CRLF that precedes the next delimiter.
             const content = part.subarray(split + 4, part.length - 2)
             const name = /name="([^"]+)"/i.exec(headers)?.[1]
-            if (/filename=/i.test(headers)) payload.photoBytes = Buffer.from(content)
-            else if (name) {
+            if (/filename=/i.test(headers)) {
+                payload.photoBytes = Buffer.from(content)
+                payload.fileName = /filename="?([^"\r\n]*)"?/i.exec(headers)?.[1]
+            } else if (name) {
                 const value = content.toString()
                 payload[name] = /^[[{]/.test(value) ? JSON.parse(value) : value
             }

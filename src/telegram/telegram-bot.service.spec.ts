@@ -79,8 +79,13 @@ describe('TelegramBotService', () => {
     })
 
     it('refuses webhook mode without a secret', () => {
+        // In production the env validation already refuses to start; this guard covers the rest.
         const service = new TelegramBotService(
-            configOf({ NODE_ENV: 'production', TELEGRAM_BOT_TOKEN: TOKEN }),
+            configOf({
+                NODE_ENV: 'development',
+                TELEGRAM_MODE: 'webhook',
+                TELEGRAM_BOT_TOKEN: TOKEN,
+            }),
         )
         expect(service.enabled).toBe(false)
         expect(service.status()).toMatchObject({

@@ -1,13 +1,29 @@
 import { caracasDay } from '../common/utils/caracas-date.js'
 import type { PaymentContent } from '../content/content.types.js'
+import {
+    artworkFilename,
+    DESIGN_FONTS,
+    originalFilename,
+    type DesignFormat,
+    type LayerPlacement,
+    type TextAlign,
+    type TextOutline,
+} from '../designs/design-layers.js'
+import { dpiLevel, type DpiLevel } from '../designs/design-templates.js'
+import {
+    designColorOf,
+    type DesignColor,
+    type DesignPrintSize,
+} from '../designs/entities/design.entity.js'
 import { RATE_SOURCE_LABELS, type RateSource } from '../exchange-rate/providers/rate-provider.js'
 import type { OrderItem } from './entities/order-item.entity.js'
 import type { OrderNote } from './entities/order-note.entity.js'
 import type { OrderPayment, PaymentSource, PaymentStatus } from './entities/order-payment.entity.js'
 import type { OrderStatusHistory } from './entities/order-status-history.entity.js'
-import type { Order, StockConflict } from './entities/order.entity.js'
+import type { Order } from './entities/order.entity.js'
 import { amountDifferenceBs, type DeliveryMethod } from './order-pricing.js'
 import { hasReceipt } from './receipt/receipt-availability.js'
+import type { LiveStockConflict } from './stock-conflict.js'
 import type { StatusLabeler } from '../catalogs/order-status-catalog.service.js'
 import {
     PAYABLE_STATUSES,
@@ -39,6 +55,79 @@ export interface OrderItemDto {
     quantity: number
     lineTotalUsd: number
     personalization: string | null
+    /** The customer's own image ("Diseño propio"); null for a regular line. */
+    design: OrderItemDesignDto | null
+}
+
+export interface OrderItemDesignDto {
+    id: string
+    /**
+     * API path of the mockup preview. Customer: add the order's `?t=` token. Admin: the session
+     * authorizes it.
+     */
+    previewPath: string
+    /** The garment color it was made on ("Negro", `#1F2937`); null without template colors. */
+    color: DesignColor | null
+}
+
+export interface AdminDesignImageLayerDto {
+    type: 'image'
+    /** Position in the design, bottom (0) to top. */
+    index: number
+    /** 1-based among the design's images ("Imagen 2"). */
+    number: number
+    placement: LayerPlacement
+    format: DesignFormat
+    width: number
+    height: number
+    bytes: number
+    dpi: number
+    dpiLevel: DpiLevel
+    /** API path that downloads the original, named like `downloadName`. */
+    downloadPath: string
+    /** API path that shows the original inline (thumbnail). */
+    viewPath: string
+    /** `MR-000123-linea1-imagen1.jpg`. */
+    downloadName: string
+}
+
+export interface AdminDesignTextLayerDto {
+    type: 'text'
+    index: number
+    placement: LayerPlacement
+    content: string
+    font: string
+    fontLabel: string
+    color: string
+    outline: TextOutline
+    align: TextAlign
+}
+
+export type AdminDesignLayerDto = AdminDesignImageLayerDto | AdminDesignTextLayerDto
+
+export interface AdminOrderItemDesignDto extends OrderItemDesignDto {
+    printSize: DesignPrintSize | null
+    /** The lowest DPI among the image layers; null with only text. */
+    dpiEstimate: number | null
+    dpiLevel: DpiLevel | null
+    /** Bottom to top. */
+    layers: AdminDesignLayerDto[]
+    /** The print-ready file; null for older designs (made before it existed). */
+    artwork: {
+        path: string
+        /** `MR-000123-linea1-arte-final.png`. */
+        downloadName: string
+        width: number
+        height: number
+        bytes: number
+        /** Its print resolution (100–200); null if unknown. */
+        dpi: number | null
+    } | null
+}
+
+export interface AdminOrderItemDto extends OrderItemDto {
+    id: string
+    design: AdminOrderItemDesignDto | null
 }
 
 export interface OrderTotalsDto {
@@ -162,14 +251,18 @@ export interface AdminOrderDto {
     stockRestored: boolean
     /** Some payment proof arrived after the deadline (or once the order had expired). */
     latePayment: boolean
-    /** Products the order could not take back from stock; `resolvedAt` once acknowledged. */
-    stockConflict: StockConflict | null
+    /**
+     * Products the order could not take back from stock; `resolvedAt` once acknowledged. While
+     * open, `available` is the stock there is now and `stillShort` says whether confirming the
+     * payment still needs an acknowledgement (otherwise the missing units are taken then).
+     */
+    stockConflict: LiveStockConflict | null
     /** Asked when an order with a payment was cancelled; null otherwise. */
     refund: RefundDto | null
     /** The purchase receipt PDF can be downloaded (verified payment, not cancelled). */
     receiptAvailable: boolean
     customer: OrderCustomerDto
-    items: OrderItemDto[]
+    items: AdminOrderItemDto[]
     totals: OrderTotalsDto
     payments: AdminPaymentDto[]
     history: AdminHistoryEntryDto[]
@@ -190,7 +283,7 @@ export interface AdminOrderListItemDto {
     totalBs: number
     itemCount: number
     latePayment: boolean
-    /** An unresolved stock conflict (the admin must acknowledge it to confirm the payment). */
+    /** An unresolved stock conflict still short now (confirming the payment needs an acknowledgement). */
     stockConflict: boolean
     refundStatus: RefundStatus | null
     /** The newest payment proof, if any. */
@@ -235,7 +328,7 @@ function toCustomer(order: Order): OrderCustomerDto {
     }
 }
 
-function toItem(item: OrderItem): OrderItemDto {
+function toItem(item: OrderItem, code: string): OrderItemDto {
     return {
         productId: item.productId,
         productName: item.productName,
@@ -247,6 +340,90 @@ function toItem(item: OrderItem): OrderItemDto {
         quantity: item.quantity,
         lineTotalUsd: item.lineTotalUsd,
         personalization: item.personalization,
+        design: item.designId
+            ? {
+                  id: item.designId,
+                  previewPath: customerDesignPath(code, item.designId),
+                  color: designColorOf(item.design),
+              }
+            : null,
+    }
+}
+
+export function customerDesignPath(code: string, designId: string): string {
+    return `/orders/${encodeURIComponent(code)}/designs/${encodeURIComponent(designId)}/preview`
+}
+
+export function adminDesignPath(code: string, itemId: string, file: string) {
+    return `/admin/orders/${encodeURIComponent(code)}/items/${encodeURIComponent(itemId)}/design/${file}`
+}
+
+function toAdminDesign(item: OrderItem, code: string): AdminOrderItemDesignDto | null {
+    if (!item.designId) return null
+    const design = item.design ?? null
+    const line = item.sortOrder + 1
+    const layers: AdminDesignLayerDto[] = []
+    let number = 0
+    for (const [index, layer] of (design?.layers ?? []).entries()) {
+        if (layer.type === 'text') {
+            layers.push({
+                type: 'text',
+                index,
+                placement: layer.placement,
+                content: layer.content,
+                font: layer.font,
+                fontLabel: DESIGN_FONTS[layer.font] ?? layer.font,
+                color: layer.color,
+                outline: layer.outline,
+                align: layer.align,
+            })
+            continue
+        }
+        number += 1
+        layers.push({
+            type: 'image',
+            index,
+            number,
+            placement: layer.placement,
+            format: layer.format,
+            width: layer.width,
+            height: layer.height,
+            bytes: layer.bytes,
+            dpi: layer.dpi,
+            dpiLevel: dpiLevel(layer.dpi),
+            downloadPath: adminDesignPath(code, item.id, `originals/${number}`),
+            viewPath: adminDesignPath(code, item.id, `originals/${number}/view`),
+            downloadName: originalFilename(code, line, number, layer.format),
+        })
+    }
+    const artwork = design?.assets?.find((asset) => asset.kind === 'artwork') ?? null
+    const dpi = design?.dpiEstimate ?? null
+    return {
+        id: item.designId,
+        previewPath: adminDesignPath(code, item.id, 'preview'),
+        color: designColorOf(design),
+        printSize: design?.printSize ?? null,
+        dpiEstimate: dpi,
+        dpiLevel: dpi === null ? null : dpiLevel(dpi),
+        layers,
+        artwork: artwork
+            ? {
+                  path: adminDesignPath(code, item.id, 'artwork'),
+                  downloadName: artworkFilename(code, line),
+                  width: artwork.width,
+                  height: artwork.height,
+                  bytes: artwork.bytes,
+                  dpi: artwork.dpi ?? null,
+              }
+            : null,
+    }
+}
+
+function toAdminItem(item: OrderItem, code: string): AdminOrderItemDto {
+    return {
+        ...toItem(item, code),
+        id: item.id,
+        design: toAdminDesign(item, code),
     }
 }
 
@@ -314,7 +491,7 @@ export function toPublicOrder(
         canSubmitPayment: canSubmitPayment(order),
         receiptAvailable: hasReceipt(order, order.payments ?? []),
         customer: toCustomer(order),
-        items: sortedItems(order).map(toItem),
+        items: sortedItems(order).map((item) => toItem(item, order.code)),
         totals: toTotals(order),
         pagoMovil,
         payments: sortByDate(order.payments ?? [])
@@ -354,10 +531,12 @@ export function proofPath(code: string, paymentId: string): string {
     return `/admin/orders/${encodeURIComponent(code)}/payments/${encodeURIComponent(paymentId)}/proof`
 }
 
+/** `stockConflict`: the order's conflict refreshed with the current stock (`liveStockConflict`). */
 export function toAdminOrder(
     order: Order,
     transitions: readonly TransitionRule[],
     label: StatusLabeler,
+    stockConflict: LiveStockConflict | null,
 ): AdminOrderDto {
     return {
         id: order.id,
@@ -369,7 +548,7 @@ export function toAdminOrder(
         paymentDueAt: order.paymentDueAt.toISOString(),
         stockRestored: order.stockRestored,
         latePayment: order.latePayment,
-        stockConflict: order.stockConflict ?? null,
+        stockConflict,
         receiptAvailable: hasReceipt(order, order.payments ?? []),
         refund: order.refundStatus
             ? {
@@ -383,7 +562,7 @@ export function toAdminOrder(
               }
             : null,
         customer: toCustomer(order),
-        items: sortedItems(order).map(toItem),
+        items: sortedItems(order).map((item) => toAdminItem(item, order.code)),
         totals: toTotals(order),
         payments: sortByDate(order.payments ?? [])
             .reverse()

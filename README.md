@@ -73,6 +73,37 @@ jsonb, so its limits live only in the content DTOs.
 Date/time columns use `timestamptz`. Plain `timestamp` has no zone, and node-postgres reads it as
 the Node process's local time, which shifts values on any host that is not on UTC.
 
+## Producción
+
+Single VPS: Docker Compose with Caddy as the only reverse proxy in front of one API instance,
+the storefront on Cloudflare Pages. With `NODE_ENV=production` the API refuses to start unless:
+`PUBLIC_API_URL` and `PUBLIC_SITE_URL` are public `https://` URLs (no localhost), `CORS_ORIGIN`
+has no localhost origin, every `CLOUDINARY_*` variable is set (no local-disk images in
+production), `MAIL_DRIVER` is `resend` (or `smtp` with a non-local host) and, when the Telegram
+bot runs in webhook mode, `TELEGRAM_WEBHOOK_SECRET` is set. Every missing item is listed at once.
+
+`TRUST_PROXY` (Express `trust proxy`) defaults to `1` in production (one hop: Caddy) and off
+elsewhere. It must match the number of proxies in front of the API, or `req.ip` (and so the
+per-IP rate limits) is wrong: too low and every customer shares Caddy's address; too high and a
+client can spoof its IP with `X-Forwarded-For`. Accepts a hop count, `false`, or names/CIDRs
+(`loopback`, `172.16.0.0/12`); `true` is refused.
+
+`GET /api/health` runs `SELECT 1` (2 s timeout): `200 { status: 'ok', database: 'up' }`, or `503`
+when the database is down. It is not rate-limited.
+
+After `npm ci && npm run build` (the runtime image only needs `npm ci --omit=dev` and `dist/`):
+
+```bash
+npm run migration:run:prod     # node node_modules/typeorm/cli.js migration:run -d dist/database/data-source.js
+# First ADMIN of an empty database (no demo data; does nothing if an active ADMIN exists).
+# The password is asked for (hidden) or read from ADMIN_PASSWORD.
+node dist/cli/create-admin.js --email duena@tudominio.com --name "Dueña"
+npm run start:prod
+```
+
+Both read `DATABASE_URL` from the environment (or a `.env` file; `dotenv` is a runtime
+dependency). Never run `db:seed` in production: it loads the demo catalog.
+
 ## Endpoints (prefix `/api`)
 
 Public:
@@ -369,7 +400,14 @@ Public (write routes throttled to 10 per 10 minutes per IP):
 
 - `GET /exchange-rate/current` → `{ available: true, rate, source, effectiveDate, … }` or
   `{ available: false, reason: 'missing' | 'stale', message }`
-- `POST /orders` → `{ code, accessToken, order }`
+- `POST /orders` → `201 { code, accessToken, order, replayed: false }`. Optional header
+  `Idempotency-Key` (16–64 of `A-Z a-z 0-9 -`, e.g. a UUID per checkout attempt; malformed → `400`).
+  A retry with the same key and the same body within 24 h creates nothing and takes no stock: it
+  answers `200` with the same order, `replayed: true` and a **new** `accessToken` (only token
+  hashes are stored; both links open the order). The same key with another body →
+  `409 { code: 'IDEMPOTENCY_KEY_REUSED' }`. Concurrent duplicates are caught by the unique index
+  and replayed the same way. Keys older than 24 h are freed. Without the header, every request
+  creates an order
 - `GET /orders/:code?t=` → the customer's order (Pago Móvil details, totals, payments, history,
   `receiptAvailable`)
 - `GET /orders/:code/receipt.pdf?t=` → the purchase receipt (`attachment;

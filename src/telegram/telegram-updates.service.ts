@@ -14,6 +14,7 @@ import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.serv
 import { ORDER_LIMITS } from '../orders/dto/field-names.js'
 import { OrderPayment } from '../orders/entities/order-payment.entity.js'
 import { Order } from '../orders/entities/order.entity.js'
+import type { StockConflictLine } from '../orders/entities/order.entity.js'
 import type { OrderActor } from '../orders/order-status.js'
 import {
     OrderStatusService,
@@ -35,7 +36,7 @@ import {
     HELP_TEXT,
     orderSummaryMessage,
     PRIVATE_BOT_MESSAGE,
-    stockConflictText,
+    stockLinesText,
     truncate,
     WELCOME_MESSAGE,
 } from './telegram-format.js'
@@ -276,7 +277,7 @@ export class TelegramUpdatesService implements OnModuleInit {
         }
         const order = await this.dataSource
             .getRepository(Order)
-            .findOne({ where: { code }, relations: { items: true, payments: true } })
+            .findOne({ where: { code }, relations: { items: { design: true }, payments: true } })
         if (!order) {
             await ctx.reply(`No encontré el pedido ${code} 🤔`)
             return
@@ -430,11 +431,9 @@ export class TelegramUpdatesService implements OnModuleInit {
         await this.exclusive(ctx, paymentId, async () => {
             const context = await this.pendingPayment(ctx, chat, paymentId)
             if (!context) return
-            const conflict = stockConflictText(context.order.stockConflict)
-            if (conflict && !acknowledged) {
-                await this.askStockConfirmation(ctx, chat, context, conflict)
-                return
-            }
+            // No check of the stored stock conflict here: it is a snapshot. The transition
+            // decides with the stock there is now and, when it is still short, refuses with the
+            // current numbers, which `onTransitionError` turns into the confirmation question.
             const name = chatDisplayName(chat)
             try {
                 await this.statuses.transition(
@@ -587,10 +586,12 @@ export class TelegramUpdatesService implements OnModuleInit {
             typeof response === 'object' &&
             (response as { code?: string }).code === STOCK_CONFLICT_UNACKNOWLEDGED
         ) {
-            // The conflict appeared after the check: ask like the first time.
-            const fresh = await this.payments.loadPayment(context.payment.id)
-            const conflict = fresh ? stockConflictText(fresh.order.stockConflict) : null
-            if (fresh && conflict) return this.askStockConfirmation(ctx, chat, fresh, conflict)
+            // Still short with the current stock: ask with those numbers.
+            const lines = (response as { lines?: unknown }).lines
+            const short = Array.isArray(lines) ? (lines as StockConflictLine[]) : []
+            if (short.length) {
+                return this.askStockConfirmation(ctx, chat, context, stockLinesText(short))
+            }
         }
         if (error instanceof ConflictException || error instanceof NotFoundException) {
             // Handled elsewhere in the meantime (the web, another chat).

@@ -165,3 +165,126 @@ describe('envSchema (mail)', () => {
         expect(envSchema.safeParse({ ...BASE, SMTP_PORT: 'abc' }).success).toBe(false)
     })
 })
+
+describe('envSchema (trust proxy)', () => {
+    it('parses hop counts, false and address lists', () => {
+        expect(validateEnv(BASE).TRUST_PROXY).toBeUndefined()
+        expect(validateEnv({ ...BASE, TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1)
+        expect(validateEnv({ ...BASE, TRUST_PROXY: '0' }).TRUST_PROXY).toBe(false)
+        expect(validateEnv({ ...BASE, TRUST_PROXY: 'false' }).TRUST_PROXY).toBe(false)
+        expect(validateEnv({ ...BASE, TRUST_PROXY: 'loopback' }).TRUST_PROXY).toBe('loopback')
+        expect(validateEnv({ ...BASE, TRUST_PROXY: 'loopback,  172.16.0.0/12' }).TRUST_PROXY).toBe(
+            'loopback, 172.16.0.0/12',
+        )
+    })
+
+    it('refuses "true" (any client could spoof its IP) and garbage', () => {
+        expect(() => validateEnv({ ...BASE, TRUST_PROXY: 'true' })).toThrow(/TRUST_PROXY/)
+        expect(envSchema.safeParse({ ...BASE, TRUST_PROXY: 'caddy proxy' }).success).toBe(false)
+    })
+})
+
+describe('envSchema (production)', () => {
+    const PRODUCTION = {
+        ...BASE,
+        NODE_ENV: 'production',
+        PUBLIC_API_URL: 'https://api.manadarusso.com',
+        PUBLIC_SITE_URL: 'https://manadarusso.com',
+        CORS_ORIGIN: 'https://manadarusso.com,https://www.manadarusso.com',
+        CLOUDINARY_CLOUD_NAME: 'manada',
+        CLOUDINARY_API_KEY: '123',
+        CLOUDINARY_API_SECRET: 'secret',
+        MAIL_DRIVER: 'resend',
+        MAIL_FROM: 'Manada Russo Creativa <pedidos@manadarusso.com>',
+        RESEND_API_KEY: 're_123',
+    }
+
+    it('accepts a complete production configuration', () => {
+        const env = validateEnv(PRODUCTION)
+        expect(env.NODE_ENV).toBe('production')
+        expect(env.CORS_ORIGIN).toEqual(['https://manadarusso.com', 'https://www.manadarusso.com'])
+    })
+
+    it('refuses the development defaults, listing everything that is missing', () => {
+        let message = ''
+        try {
+            validateEnv({ ...BASE, NODE_ENV: 'production' })
+        } catch (error) {
+            message = (error as Error).message
+        }
+        for (const key of [
+            'PUBLIC_API_URL',
+            'PUBLIC_SITE_URL',
+            'CORS_ORIGIN',
+            'CLOUDINARY_CLOUD_NAME',
+            'CLOUDINARY_API_KEY',
+            'CLOUDINARY_API_SECRET',
+            'MAIL_DRIVER',
+        ]) {
+            expect(message).toContain(`${key}: [production]`)
+        }
+    })
+
+    it('requires https and a public host for the public URLs', () => {
+        expect(() =>
+            validateEnv({ ...PRODUCTION, PUBLIC_API_URL: 'http://api.manadarusso.com' }),
+        ).toThrow(/PUBLIC_API_URL: \[production\]/)
+        expect(() =>
+            validateEnv({ ...PRODUCTION, PUBLIC_SITE_URL: 'https://127.0.0.1:5173' }),
+        ).toThrow(/PUBLIC_SITE_URL: \[production\]/)
+    })
+
+    it('refuses localhost among the CORS origins', () => {
+        expect(() =>
+            validateEnv({
+                ...PRODUCTION,
+                CORS_ORIGIN: 'https://manadarusso.com,http://localhost:5173',
+            }),
+        ).toThrow(/CORS_ORIGIN: \[production\].*http:\/\/localhost:5173/)
+    })
+
+    it('requires every Cloudinary variable', () => {
+        expect(() => validateEnv({ ...PRODUCTION, CLOUDINARY_API_SECRET: '' })).toThrow(
+            /CLOUDINARY_API_SECRET: \[production\]/,
+        )
+    })
+
+    it('accepts smtp with a real server but not a local one', () => {
+        const smtp = {
+            ...PRODUCTION,
+            MAIL_DRIVER: 'smtp',
+            SMTP_HOST: 'smtp.example.com',
+            SMTP_PORT: '587',
+            SMTP_USER: 'user',
+            SMTP_PASS: 'pass',
+        }
+        expect(validateEnv(smtp).MAIL_DRIVER).toBe('smtp')
+        expect(() => validateEnv({ ...smtp, SMTP_HOST: 'localhost' })).toThrow(
+            /SMTP_HOST: \[production\]/,
+        )
+    })
+
+    it('requires the webhook secret when the bot runs in webhook mode', () => {
+        expect(() => validateEnv({ ...PRODUCTION, TELEGRAM_BOT_TOKEN: '123:abc' })).toThrow(
+            /TELEGRAM_WEBHOOK_SECRET: \[production\]/,
+        )
+        expect(
+            validateEnv({
+                ...PRODUCTION,
+                TELEGRAM_BOT_TOKEN: '123:abc',
+                TELEGRAM_WEBHOOK_SECRET: 'secret_1',
+            }).TELEGRAM_WEBHOOK_SECRET,
+        ).toBe('secret_1')
+        // Polling, or the bot switched off, needs no secret.
+        expect(() =>
+            validateEnv({ ...PRODUCTION, TELEGRAM_BOT_TOKEN: '123:abc', TELEGRAM_MODE: 'polling' }),
+        ).not.toThrow()
+        expect(() =>
+            validateEnv({
+                ...PRODUCTION,
+                TELEGRAM_BOT_TOKEN: '123:abc',
+                TELEGRAM_ENABLED: 'false',
+            }),
+        ).not.toThrow()
+    })
+})

@@ -25,6 +25,18 @@ export class SlidingWindowLimiter {
         return true
     }
 
+    /** True when the key is at its limit right now (nothing is recorded). */
+    isLimited(key: string): boolean {
+        const now = this.now()
+        const recent = (this.hits.get(key) ?? []).filter((at) => now - at < this.windowMs)
+        return recent.length >= this.limit
+    }
+
+    /** Forgets the key's hits (e.g. after a successful login). */
+    reset(key: string): void {
+        this.hits.delete(key)
+    }
+
     private prune(now: number): void {
         for (const [key, times] of this.hits) {
             if (times.every((at) => now - at >= this.windowMs)) this.hits.delete(key)

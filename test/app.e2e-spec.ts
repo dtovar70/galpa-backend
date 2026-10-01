@@ -15,6 +15,7 @@ const dataSourceStub = {
     entityMetadatas: [],
     options: { type: 'postgres' },
     manager: {},
+    query: vi.fn((sql: string) => Promise.resolve(sql === 'SELECT 1' ? [{ '?column?': 1 }] : [])),
     getRepository: (entity: unknown) =>
         catalogRepository(entity) ?? { findOneBy: () => Promise.resolve(null) },
 }
@@ -40,8 +41,25 @@ describe('App (e2e)', () => {
         await app.close()
     })
 
-    it('GET /api/health is public', () => {
-        return request(app.getHttpServer()).get('/api/health').expect(200).expect({ status: 'ok' })
+    it('GET /api/health is public and pings the database', async () => {
+        dataSourceStub.query.mockClear()
+        await request(app.getHttpServer())
+            .get('/api/health')
+            .expect(200)
+            .expect({ status: 'ok', database: 'up' })
+        expect(dataSourceStub.query).toHaveBeenCalledWith('SELECT 1')
+    })
+
+    it('GET /api/health answers 503 when the database is down', async () => {
+        dataSourceStub.query.mockRejectedValueOnce(new Error('connect ECONNREFUSED'))
+        const response = await request(app.getHttpServer()).get('/api/health').expect(503)
+        expect(response.body).toMatchObject({ status: 'error', database: 'down' })
+    })
+
+    it('GET /api/health is not throttled', async () => {
+        for (let i = 0; i < 130; i++) {
+            await request(app.getHttpServer()).get('/api/health').expect(200)
+        }
     })
 
     it('GET /api/auth/me without a session is rejected', () => {

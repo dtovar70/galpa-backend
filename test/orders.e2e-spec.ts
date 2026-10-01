@@ -725,6 +725,7 @@ describe('Orders (e2e)', () => {
                     requested: 2,
                     available: 0,
                     reserved: 0,
+                    stillShort: true,
                 },
             ])
             // The variant that still exists was taken again.
@@ -758,6 +759,88 @@ describe('Orders (e2e)', () => {
                 refundStatus: 'NO_APLICA',
             }).expect(200)
             expect(db.variantStock('v-m')).toBe(4)
+        })
+
+        it('confirms without acknowledgement once the owner restocked the variant', async () => {
+            const order = await createOrder([
+                { productId: 'tee-001', variantId: 'v-m', quantity: 1 },
+            ])
+            await expire(order.code)
+            db.setVariantStock('v-m', 0)
+            await payment(order.code, order.accessToken, { amountBs: '1' }).expect(200)
+
+            db.setVariantStock('v-m', 2)
+            const detail = await request(app.getHttpServer())
+                .get(`/api/admin/orders/${order.code}`)
+                .set('Cookie', cookie('editor'))
+                .expect(200)
+            expect(detail.body.stockConflict).toMatchObject({
+                resolvedAt: null,
+                stillShort: false,
+                lines: [{ variantId: 'v-m', requested: 1, reserved: 0, available: 2 }],
+            })
+            const list = await request(app.getHttpServer())
+                .get('/api/admin/orders')
+                .set('Cookie', cookie('editor'))
+                .expect(200)
+            const row = (list.body.items as Row[]).find((item) => item.code === order.code)
+            expect(row?.stockConflict).toBe(false)
+
+            const confirmed = await admin(order.code, '/transitions', 'editor', {
+                to: 'PAGO_VERIFICADO',
+            }).expect(200)
+            expect(confirmed.body.status).toBe('PAGO_VERIFICADO')
+            expect(confirmed.body.stockConflict.resolvedAt).not.toBeNull()
+            expect(confirmed.body.stockConflict.resolvedById).toBe(USERS.editor.id)
+            expect(confirmed.body.stockConflict.lines[0]).toMatchObject({ reserved: 1 })
+            expect(confirmed.body.history.at(-1).note).toBe(
+                'Pago confirmado; el stock que faltaba ya estaba disponible.',
+            )
+            expect(db.variantStock('v-m')).toBe(1)
+            expect(db.stock('tee-001')).toBe(1)
+        })
+
+        it('still needs the acknowledgement after a partial restock, with the current numbers', async () => {
+            db.setVariantStock('v-m', 2)
+            const order = await createOrder([
+                { productId: 'tee-001', variantId: 'v-m', quantity: 2 },
+            ])
+            await expire(order.code)
+            db.setVariantStock('v-m', 0)
+            await payment(order.code, order.accessToken, { amountBs: '1' }).expect(200)
+
+            db.setVariantStock('v-m', 1)
+            const detail = await request(app.getHttpServer())
+                .get(`/api/admin/orders/${order.code}`)
+                .set('Cookie', cookie('editor'))
+                .expect(200)
+            expect(detail.body.stockConflict).toMatchObject({
+                stillShort: true,
+                lines: [{ requested: 2, reserved: 0, available: 1, stillShort: true }],
+            })
+
+            const refused = await admin(order.code, '/transitions', 'editor', {
+                to: 'PAGO_VERIFICADO',
+            }).expect(400)
+            expect(refused.body.code).toBe('STOCK_CONFLICT_UNACKNOWLEDGED')
+            expect(refused.body.message).toBe(
+                'Falta stock para este pedido («Franela – M» pidió 2, hay 1). Confirma que lo entiendes para continuar.',
+            )
+            expect(refused.body.lines).toMatchObject([{ variantId: 'v-m', available: 1 }])
+            expect(db.variantStock('v-m')).toBe(1)
+
+            const confirmed = await admin(order.code, '/transitions', 'editor', {
+                to: 'PAGO_VERIFICADO',
+                acknowledgeStockConflict: true,
+            }).expect(200)
+            expect(confirmed.body.stockConflict.lines[0]).toMatchObject({
+                requested: 2,
+                reserved: 1,
+            })
+            expect(confirmed.body.history.at(-1).note).toBe(
+                'Pago confirmado con stock insuficiente: «Franela – M» faltan 1 unidad.',
+            )
+            expect(db.variantStock('v-m')).toBe(0)
         })
 
         it('caps a legacy conflict line (no variantId) over all the variants of its product', async () => {
@@ -1072,5 +1155,129 @@ describe('Orders (e2e)', () => {
             .send({ rate: 1 })
             .expect(403)
         expect(DEFAULT_SITE_CONTENT.payment.bankCode).toBe('')
+    })
+
+    describe('checkout retries (Idempotency-Key)', () => {
+        const KEY = '3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f'
+        const post = (body: Row, key?: string) => {
+            const req = request(app.getHttpServer()).post('/api/orders')
+            if (key !== undefined) req.set('Idempotency-Key', key)
+            return req.send(body)
+        }
+
+        it('returns the same order for a retry, taking the stock once', async () => {
+            const first = await post(checkout(), KEY).expect(201)
+            expect(first.body).toMatchObject({ code: 'MR-000001', replayed: false })
+            expect(db.variantStock('v-15oz')).toBe(3)
+            expect(db.table(Order)[0]).toMatchObject({ idempotencyKey: KEY })
+            expect(db.table(Order)[0]?.idempotencyHash).toMatch(/^[a-f0-9]{64}$/)
+
+            // Even once the rate went stale: the retry never re-prices anything.
+            db.table(ExchangeRate)[0]!.effectiveDate = '2020-01-01'
+            // Same body, other key order and email case: the same request.
+            const { items, ...rest } = checkout({ email: 'ANA@example.com' })
+            const retry = await post({ items, ...rest }, KEY).expect(200)
+            expect(retry.body).toMatchObject({ code: 'MR-000001', replayed: true })
+            expect(retry.body.order).toEqual(first.body.order)
+            expect(retry.body.accessToken).toMatch(/^[A-Za-z0-9_-]{43}$/)
+            expect(retry.body.accessToken).not.toBe(first.body.accessToken)
+
+            expect(db.table(Order)).toHaveLength(1)
+            expect(db.variantStock('v-15oz')).toBe(3)
+            expect(events.map((event) => event.name)).toEqual([ORDER_EVENTS.created])
+            // Both links open the order.
+            for (const token of [first.body.accessToken, retry.body.accessToken]) {
+                await request(app.getHttpServer())
+                    .get(`/api/orders/MR-000001?t=${token}`)
+                    .expect(200)
+            }
+        })
+
+        it('refuses the same key with another body (409)', async () => {
+            await post(checkout(), KEY).expect(201)
+            const other = await post(checkout({ address: 'Otra dirección 123' }), KEY).expect(409)
+            expect(other.body).toMatchObject({
+                code: 'IDEMPOTENCY_KEY_REUSED',
+                message:
+                    'Este intento de compra ya se usó con otros datos. Recarga la página e intenta de nuevo.',
+            })
+            expect(db.table(Order)).toHaveLength(1)
+            expect(db.variantStock('v-15oz')).toBe(3)
+        })
+
+        it('creates one order per request without the header, as before', async () => {
+            const first = await post(checkout()).expect(201)
+            const second = await post(checkout(), '').expect(201)
+            expect([first.body.code, second.body.code]).toEqual(['MR-000001', 'MR-000002'])
+            expect(second.body.replayed).toBe(false)
+            expect(db.variantStock('v-15oz')).toBe(1)
+            expect(db.table(Order).map((order) => order.idempotencyKey)).toEqual([null, null])
+        })
+
+        it('refuses a malformed key', async () => {
+            for (const key of ['short', 'x'.repeat(65), 'has spaces in the key!!']) {
+                const response = await post(checkout(), key).expect(400)
+                expect(response.body.details).toEqual([
+                    {
+                        field: 'Idempotency-Key',
+                        errors: [
+                            'El identificador del intento de compra no es válido. Recarga la página.',
+                        ],
+                    },
+                ])
+            }
+            expect(db.table(Order)).toHaveLength(0)
+        })
+
+        it('answers concurrent duplicates with one order (the loser is rolled back)', async () => {
+            db.isolatedTransactions = true
+            const [a, b] = await Promise.all([post(checkout(), KEY), post(checkout(), KEY)])
+            expect([a.status, b.status].sort()).toEqual([200, 201])
+            expect(a.body.code).toBe(b.body.code)
+            expect(db.table(Order)).toHaveLength(1)
+            expect(db.variantStock('v-15oz')).toBe(3)
+            expect(db.stock('mug-001')).toBe(6)
+        })
+
+        it('replays when the unique index catches a retry that missed the lookup', async () => {
+            db.isolatedTransactions = true
+            await post(checkout(), KEY).expect(201)
+            // The retry's lookup runs before the first request commits: it finds nothing.
+            const getRepository = db.dataSource.getRepository
+            let missed = false
+            db.dataSource.getRepository = (entity: unknown) => {
+                const repository = getRepository(entity)
+                if (entity !== Order || missed) return repository
+                return {
+                    ...repository,
+                    findOne: (options: { where?: Row }) => {
+                        if (options.where?.idempotencyKey && !missed) {
+                            missed = true
+                            return Promise.resolve(null)
+                        }
+                        return (
+                            repository as { findOne: (o: unknown) => Promise<unknown> }
+                        ).findOne(options)
+                    },
+                } as ReturnType<typeof getRepository>
+            }
+
+            const retry = await post(checkout(), KEY).expect(200)
+            expect(missed).toBe(true)
+            expect(retry.body).toMatchObject({ code: 'MR-000001', replayed: true })
+            expect(db.table(Order)).toHaveLength(1)
+            // The losing transaction took stock and inserted rows; all of it was rolled back.
+            expect(db.variantStock('v-15oz')).toBe(3)
+            expect(db.table(OrderAccessLink)).toHaveLength(2)
+        })
+
+        it('frees a key older than 24 hours and creates a new order', async () => {
+            await post(checkout(), KEY).expect(201)
+            db.table(Order)[0]!.createdAt = new Date(Date.now() - 25 * 60 * 60_000)
+            const later = await post(checkout({ address: 'Otra dirección 123' }), KEY).expect(201)
+            expect(later.body).toMatchObject({ code: 'MR-000002', replayed: false })
+            expect(db.table(Order).map((order) => order.idempotencyKey)).toEqual([null, KEY])
+            expect(db.variantStock('v-15oz')).toBe(1)
+        })
     })
 })

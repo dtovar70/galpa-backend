@@ -121,4 +121,15 @@ describe('derived product fields', () => {
             }),
         ).toBe('taza cafe primero ceramica ¡sorpresa! oferta')
     })
+
+    it('adds "favorito" for bestsellers, the word the store shows', () => {
+        expect(
+            computeSearchText({
+                name: 'Taza',
+                description: '',
+                printText: '',
+                tags: ['bestseller'],
+            }),
+        ).toContain('bestseller favorito')
+    })
 })

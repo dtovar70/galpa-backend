@@ -1,8 +1,12 @@
-import { FindOperator } from 'typeorm'
+import { FindOperator, QueryFailedError } from 'typeorm'
 import { User } from '../../src/auth/entities/user.entity.js'
 import { Role } from '../../src/auth/role.enum.js'
+import { CategoryDesignTemplate } from '../../src/categories/entities/category-design-template.entity.js'
+import { Category } from '../../src/categories/entities/category.entity.js'
 import { caracasDay } from '../../src/common/utils/caracas-date.js'
 import { SiteContentEntry } from '../../src/content/entities/site-content.entity.js'
+import { DesignAsset } from '../../src/designs/entities/design-asset.entity.js'
+import { Design } from '../../src/designs/entities/design.entity.js'
 import { ExchangeRate } from '../../src/exchange-rate/entities/exchange-rate.entity.js'
 import { OrderAccessLink } from '../../src/orders/entities/order-access-link.entity.js'
 import { OrderItem } from '../../src/orders/entities/order-item.entity.js'
@@ -52,7 +56,15 @@ function matches(row: Row, where: Row = {}): boolean {
  */
 export class FakeDb {
     seq = 0
+    /**
+     * Opt-in: transactions run one at a time (like two checkouts waiting on the same row locks)
+     * and an error rolls every table back, so a failed transaction leaves no writes behind.
+     */
+    isolatedTransactions = false
+    private transactionQueue: Promise<unknown> = Promise.resolve()
     tables = new Map<unknown, Row[]>([
+        [Category, []],
+        [CategoryDesignTemplate, []],
         [Product, []],
         [ProductVariant, []],
         [ProductImage, []],
@@ -64,9 +76,28 @@ export class FakeDb {
         [OrderAccessLink, []],
         [ExchangeRate, []],
         [SiteContentEntry, []],
+        [Design, []],
+        [DesignAsset, []],
     ])
 
     constructor() {
+        // As after the CategoryDesignTemplates migrations: print sizes, no template photos.
+        const category = (slug: string, widthCm: number | null, heightCm: number | null) => ({
+            slug,
+            name: slug,
+            tagline: '',
+            description: '',
+            colorHex: '#FFD979',
+            sortOrder: 0,
+            designPrintWidthCm: widthCm,
+            designPrintHeightCm: heightCm,
+        })
+        this.table(Category).push(
+            category('mugs', 20, 8.5),
+            category('tees', 25, 30),
+            category('keychains', 5, 5),
+            category('coolers', null, null),
+        )
         this.table(Product).push(
             {
                 id: 'mug-001',
@@ -75,6 +106,8 @@ export class FakeDb {
                 price: 12.9,
                 stock: 8,
                 isActive: true,
+                categorySlug: 'mugs',
+                tags: ['personalizable'],
             },
             {
                 id: 'tee-001',
@@ -83,10 +116,30 @@ export class FakeDb {
                 price: 20,
                 stock: 1,
                 isActive: true,
+                categorySlug: 'tees',
+                tags: [],
             },
-            { id: 'off-001', slug: 'oculto', name: 'Oculto', price: 5, stock: 9, isActive: false },
+            {
+                id: 'off-001',
+                slug: 'oculto',
+                name: 'Oculto',
+                price: 5,
+                stock: 9,
+                isActive: false,
+                categorySlug: 'mugs',
+                tags: ['personalizable'],
+            },
             // No variants: the product row holds its own stock.
-            { id: 'key-001', slug: 'llavero', name: 'Llavero', price: 4, stock: 3, isActive: true },
+            {
+                id: 'key-001',
+                slug: 'llavero',
+                name: 'Llavero',
+                price: 4,
+                stock: 3,
+                isActive: true,
+                categorySlug: 'keychains',
+                tags: ['personalizable'],
+            },
         )
         // Stock per variant; `products.stock` is their sum (8 for the mug, 1 for the tee).
         this.table(ProductVariant).push(
@@ -182,6 +235,27 @@ export class FakeDb {
                 ),
             // The admin list: per-status counts, pending refunds and one filtered page.
             getRawMany: () => {
+                if (entity === Product) {
+                    // Product counts per category (CategoriesService.productCounts).
+                    const counts = new Map<string, Row>()
+                    for (const product of this.table(Product)) {
+                        const slug = product.categorySlug as string
+                        if (params.slug && params.slug !== slug) continue
+                        const row = counts.get(slug) ?? {
+                            slug,
+                            active: 0,
+                            total: 0,
+                            personalizable: 0,
+                        }
+                        row.total = (row.total as number) + 1
+                        if (product.isActive) row.active = (row.active as number) + 1
+                        if ((product.tags as string[]).includes('personalizable')) {
+                            row.personalizable = (row.personalizable as number) + 1
+                        }
+                        counts.set(slug, row)
+                    }
+                    return Promise.resolve([...counts.values()])
+                }
                 if (entity === OrderItem) {
                     const quantities = new Map<string, number>()
                     for (const item of this.table(OrderItem)) {
@@ -238,7 +312,20 @@ export class FakeDb {
         const of = (entity: unknown) => this.table(entity).filter((row) => row.orderId === order.id)
         return {
             ...order,
-            items: of(OrderItem),
+            items: of(OrderItem).map((item) => {
+                const design = this.table(Design).find((row) => row.id === item.designId)
+                return {
+                    ...item,
+                    design: design
+                        ? {
+                              ...design,
+                              assets: this.table(DesignAsset).filter(
+                                  (asset) => asset.designId === design.id,
+                              ),
+                          }
+                        : null,
+                }
+            }),
             payments: of(OrderPayment),
             history: of(OrderStatusHistory),
             adminNotes: of(OrderNote),
@@ -248,6 +335,19 @@ export class FakeDb {
     private insert(entity: unknown, rows: Row | Row[]) {
         const now = new Date()
         for (const row of Array.isArray(rows) ? rows : [rows]) {
+            // The unique index on orders.idempotency_key.
+            if (
+                entity === Order &&
+                row.idempotencyKey &&
+                this.table(Order).some((order) => order.idempotencyKey === row.idempotencyKey)
+            ) {
+                return Promise.reject(
+                    new QueryFailedError('INSERT INTO "orders"', [], {
+                        code: '23505',
+                        constraint: 'orders_idempotency_key_key',
+                    } as unknown as Error),
+                )
+            }
             this.table(entity).push({ createdAt: now, updatedAt: now, ...row })
         }
         return Promise.resolve({})
@@ -337,7 +437,26 @@ export class FakeDb {
                 if (!found) return Promise.resolve(null)
                 return Promise.resolve(entity === Order ? this.withRelations(found) : found)
             },
+            findOneBy: (where: Row) =>
+                Promise.resolve(this.table(entity).find((row) => matches(row, where)) ?? null),
+            existsBy: (where: Row) =>
+                Promise.resolve(this.table(entity).some((row) => matches(row, where))),
             insert: (rows: Row | Row[]) => this.insert(entity, rows),
+            update: (where: Row, changes: Row) => this.update(entity, where, changes),
+            delete: (where: Row) => {
+                const rows = this.table(entity)
+                const keep = rows.filter((row) => !matches(row, where))
+                const affected = rows.length - keep.length
+                const gone = rows.filter((row) => matches(row, where)).map((row) => row.id)
+                rows.splice(0, rows.length, ...keep)
+                if (entity === Design) {
+                    // design_assets.design_id is ON DELETE CASCADE.
+                    const assets = this.table(DesignAsset)
+                    const kept = assets.filter((asset) => !gone.includes(asset.designId))
+                    assets.splice(0, assets.length, ...kept)
+                }
+                return Promise.resolve({ affected })
+            },
             createQueryBuilder: () => this.queryBuilder(entity),
         }
     }
@@ -348,6 +467,28 @@ export class FakeDb {
         options: { type: 'postgres' },
         manager: this.manager,
         getRepository: (entity: unknown) => this.repository(entity),
-        transaction: <T>(work: (manager: FakeDb['manager']) => Promise<T>) => work(this.manager),
+        transaction: <T>(work: (manager: FakeDb['manager']) => Promise<T>): Promise<T> =>
+            this.isolatedTransactions ? this.isolated(work) : work(this.manager),
+    }
+
+    private isolated<T>(work: (manager: FakeDb['manager']) => Promise<T>): Promise<T> {
+        const run = async () => {
+            const snapshot = new Map(
+                [...this.tables].map(([entity, rows]) => [entity, rows.map((row) => ({ ...row }))]),
+            )
+            try {
+                return await work(this.manager)
+            } catch (error) {
+                for (const [entity, rows] of snapshot) {
+                    const table = this.table(entity)
+                    table.splice(0, table.length, ...rows)
+                }
+                // Like Postgres, the order code sequence is not rolled back.
+                throw error
+            }
+        }
+        const result = this.transactionQueue.then(run, run)
+        this.transactionQueue = result.catch(() => undefined)
+        return result
     }
 }

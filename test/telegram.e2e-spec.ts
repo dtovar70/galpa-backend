@@ -7,6 +7,8 @@ import cookieParser from 'cookie-parser'
 import { Readable } from 'node:stream'
 import request from 'supertest'
 import { caracasDay } from '../src/common/utils/caracas-date.js'
+import { DesignAsset } from '../src/designs/entities/design-asset.entity.js'
+import { Design } from '../src/designs/entities/design.entity.js'
 import { OrderPayment } from '../src/orders/entities/order-payment.entity.js'
 import { OrderStatusHistory } from '../src/orders/entities/order-status-history.entity.js'
 import { Order } from '../src/orders/entities/order.entity.js'
@@ -317,6 +319,150 @@ describe('Telegram bot (e2e, fake Bot API)', () => {
         )
     })
 
+    it('marks own designs, sends their previews as an album, then the print files', async () => {
+        await link(OWNER)
+        await link(HELPER)
+        const layers = (id: string): Row[] => [
+            {
+                type: 'image',
+                z: 0,
+                assetIndex: 0,
+                placement: { x: 0, y: 0, scale: 1, rotation: 0 },
+                format: 'png',
+                width: 2362,
+                height: 1004,
+                bytes: 10,
+                dpi: 300,
+            },
+            ...(id === 'design-a'
+                ? [
+                      {
+                          type: 'image',
+                          z: 1,
+                          assetIndex: 1,
+                          placement: { x: 0, y: 0, scale: 0.5, rotation: 0 },
+                          format: 'jpg',
+                          width: 1181,
+                          height: 1181,
+                          bytes: 10,
+                          dpi: 300,
+                      },
+                      {
+                          type: 'text',
+                          z: 2,
+                          placement: { x: 0, y: 0.3, scale: 1, rotation: 0 },
+                          content: 'Sofía <7>',
+                          font: 'pacifico',
+                          color: '#E75F9B',
+                          outline: 'none',
+                          align: 'center',
+                      },
+                  ]
+                : []),
+        ]
+        const asset = (designId: string, kind: string, key: string, layerIndex: number | null) => ({
+            id: `${designId}-${key}`,
+            designId,
+            kind,
+            layerIndex,
+            storageKey: `designs/${designId}-${key}`,
+            format: key.endsWith('.jpg') ? 'jpg' : 'png',
+            width: 10,
+            height: 10,
+            bytes: 10,
+        })
+        for (const id of ['design-a', 'design-b']) {
+            db.table(Design).push({
+                id,
+                productId: 'mug-001',
+                variantId: 'v-15oz',
+                previewKey: `designs/${id}-preview.png`,
+                layers: layers(id),
+                printSize: { widthCm: 20, heightCm: 8.5 },
+                dpiEstimate: 300,
+                attachedAt: null,
+                createdAt: new Date(),
+            })
+            db.table(DesignAsset).push(
+                asset(id, 'original', 'original-1.png', 0),
+                asset(id, 'artwork', 'artwork.png', null),
+            )
+        }
+        db.table(DesignAsset).push(asset('design-a', 'original', 'original-2.jpg', 1))
+        const { body } = await http()
+            .post('/api/orders')
+            .send({
+                fullName: 'Ana Pérez',
+                email: 'ana@example.com',
+                phone: '0414-1234567',
+                city: 'Caracas',
+                address: 'Av. Principal, casa 4',
+                deliveryMethod: 'delivery',
+                items: [
+                    {
+                        productId: 'mug-001',
+                        variantId: 'v-15oz',
+                        quantity: 1,
+                        designId: 'design-a',
+                    },
+                    { productId: 'mug-001', variantId: 'v-11oz', quantity: 1 },
+                    {
+                        productId: 'mug-001',
+                        variantId: 'v-15oz',
+                        quantity: 1,
+                        designId: 'design-b',
+                    },
+                ],
+            })
+            .expect(201)
+        const code = body.code as string
+        await pay(code, body.accessToken as string)
+
+        await eventually(() => expect(telegramServer.of('sendMediaGroup')).toHaveLength(2))
+        const caption = telegramServer.of('sendPhoto')[0]?.caption as string
+        expect(caption).toContain('1 × Taza Café Primero (15 oz)\n   🎨 <b>Diseño propio</b>')
+        expect(storage.readPrivate).toHaveBeenCalledWith('designs/design-a-preview.png')
+        expect(storage.readPrivate).toHaveBeenCalledWith('designs/design-b-preview.png')
+        const album = telegramServer.of('sendMediaGroup')[0]?.media as Row[]
+        expect(album).toHaveLength(2)
+        expect(album[0]).toMatchObject({ type: 'photo', parse_mode: 'HTML' })
+        expect(album[0]?.caption).toContain(`Diseño propio</b> · <b>${code}</b> · línea 1`)
+        // The texts of the design, escaped.
+        expect(album[0]?.caption).toContain(
+            '🔤 Texto: «Sofía &lt;7&gt;» · fuente Pacifico · color #E75F9B',
+        )
+        expect(album[1]?.caption).toContain('línea 3')
+        expect(album[1]?.caption).not.toContain('Texto')
+
+        // Then the print files as documents, per line: the arte final, then each original.
+        await eventually(() => expect(telegramServer.of('sendDocument')).toHaveLength(10))
+        const documents = telegramServer.of('sendDocument')
+        const owner = documents.filter((doc) => String(doc.chat_id) === String(OWNER))
+        expect(owner.map((doc) => (doc.caption as string).split('\n')[0])).toEqual([
+            `🖨️ <b>Arte final para imprimir</b> · <b>${code}</b> · línea 1`,
+            `📎 <b>Original 1 para imprimir</b> · <b>${code}</b> · línea 1`,
+            `📎 <b>Original 2 para imprimir</b> · <b>${code}</b> · línea 1`,
+            `🖨️ <b>Arte final para imprimir</b> · <b>${code}</b> · línea 3`,
+            `📎 <b>Original 1 para imprimir</b> · <b>${code}</b> · línea 3`,
+        ])
+        expect(owner.map((doc) => doc.fileName)).toEqual([
+            `${code}-linea1-arte-final.png`,
+            `${code}-linea1-imagen1.png`,
+            `${code}-linea1-imagen2.jpg`,
+            `${code}-linea3-arte-final.png`,
+            `${code}-linea3-imagen1.png`,
+        ])
+        // Uploaded once: the second chat gets Telegram's file ids.
+        const helper = documents.filter((doc) => String(doc.chat_id) === String(HELPER))
+        expect(helper).toHaveLength(5)
+        for (const doc of helper) {
+            expect(doc.document).toMatch(/^doc-file-/)
+            expect(doc.photoBytes).toBeUndefined()
+        }
+        expect(storage.readPrivate).toHaveBeenCalledWith('designs/design-a-artwork.png')
+        expect(storage.readPrivate).toHaveBeenCalledWith('designs/design-a-original-2.jpg')
+    })
+
     it('deactivates a chat that blocked the bot without affecting the others', async () => {
         await link(OWNER)
         await link(HELPER)
@@ -396,6 +542,57 @@ describe('Telegram bot (e2e, fake Bot API)', () => {
         expect((orderRow(code).stockConflict as Row).resolvedAt).toBeTruthy()
         // The question is gone.
         expect(telegramServer.of('deleteMessage')).toHaveLength(1)
+    })
+
+    const variantConflict = (code: string) => {
+        orderRow(code).stockConflict = {
+            detectedAt: new Date().toISOString(),
+            lines: [
+                {
+                    productId: 'mug-001',
+                    variantId: 'v-15oz',
+                    productName: 'Taza Café Primero',
+                    variantLabel: '15 oz',
+                    requested: 2,
+                    available: 0,
+                    reserved: 0,
+                },
+            ],
+            resolvedAt: null,
+            resolvedById: null,
+        }
+    }
+
+    it('confirms right away when the missing stock is back', async () => {
+        await link(OWNER)
+        const { code, paymentId } = await pendingPayment()
+        // Recorded with 0 in stock; the variant has 3 now.
+        variantConflict(code)
+        telegramServer.reset()
+
+        await webhook(callbackUpdate(OWNER, `pv:${paymentId}`)).expect(200)
+        expect(orderRow(code).status).toBe('PAGO_VERIFICADO')
+        expect(telegramServer.of('sendMessage')).toHaveLength(0)
+        expect((orderRow(code).stockConflict as Row).resolvedAt).toBeTruthy()
+        expect(db.variantStock('v-15oz')).toBe(1)
+        expect(telegramServer.of('answerCallbackQuery').at(-1)?.text).toContain('Pago confirmado')
+    })
+
+    it('asks with the current stock when it is still short', async () => {
+        await link(OWNER)
+        const { code, paymentId } = await pendingPayment()
+        variantConflict(code)
+        db.setVariantStock('v-15oz', 1)
+        telegramServer.reset()
+
+        await webhook(callbackUpdate(OWNER, `pv:${paymentId}`)).expect(200)
+        expect(orderRow(code).status).toBe('PENDIENTE_VERIFICACION')
+        const prompt = telegramServer.of('sendMessage').at(-1)
+        expect(prompt?.text).toContain('«Taza Café Primero – 15 oz» pidió 2, hay 1')
+
+        await webhook(callbackUpdate(OWNER, `pa:${paymentId}`)).expect(200)
+        expect(orderRow(code).status).toBe('PAGO_VERIFICADO')
+        expect(db.variantStock('v-15oz')).toBe(0)
     })
 
     it('rejects with a quick reason and offers the WhatsApp reminder', async () => {
@@ -587,6 +784,68 @@ describe('Telegram bot (e2e, fake Bot API)', () => {
             .delete(`/api/admin/telegram/chats/${id}`)
             .set('Cookie', cookie('admin'))
             .expect(404)
+    })
+
+    describe('contact form', () => {
+        const form = (overrides: Row = {}) => ({
+            fullName: 'Ana <b>Pérez</b>',
+            email: 'ana@example.com',
+            phone: '0414-1234567',
+            topic: 'mayoreo',
+            message: 'Quiero 20 tazas & <franelas> para mi equipo.',
+            ...overrides,
+        })
+        const send = (body: Row) => http().post('/api/contact').send(body)
+
+        it('refuses with 503 while no chat is linked', async () => {
+            const { body } = await send(form()).expect(503)
+            expect(body.code).toBe('CONTACT_UNAVAILABLE')
+            expect(telegramServer.of('sendMessage')).toHaveLength(0)
+        })
+
+        it('sends the message to every active chat with a WhatsApp button', async () => {
+            await link(OWNER)
+            await link(HELPER)
+            telegramServer.reset()
+
+            await send(form())
+                .expect(202)
+                .expect({ message: 'Recibimos tu mensaje. Te respondemos pronto.' })
+            await eventually(() => expect(telegramServer.of('sendMessage')).toHaveLength(2))
+            const [first, second] = telegramServer.of('sendMessage')
+            expect([String(first?.chat_id), String(second?.chat_id)].sort()).toEqual(
+                [String(OWNER), String(HELPER)].sort(),
+            )
+            const text = first?.text as string
+            expect(text).toContain('📨 <b>Nuevo mensaje de contacto</b>')
+            expect(text).toContain('👤 Ana &lt;b&gt;Pérez&lt;/b&gt;')
+            expect(text).toContain('✉️ ana@example.com')
+            expect(text).toContain('📱 WhatsApp: 0414-1234567')
+            expect(text).toContain('🏷️ Pedido por mayor')
+            expect(text).toContain('Quiero 20 tazas &amp; &lt;franelas&gt; para mi equipo.')
+            expect(first?.parse_mode).toBe('HTML')
+            const [button] = buttons(first?.reply_markup)
+            expect(button?.text).toBe('💬 Abrir WhatsApp')
+            expect(button?.url).toMatch(/^https:\/\/wa\.me\/584141234567\?text=Hola%20Ana%2C/)
+        })
+
+        it('omits the WhatsApp line and button without a phone', async () => {
+            await link(OWNER)
+            telegramServer.reset()
+            await send(form({ phone: '' })).expect(202)
+            await eventually(() => expect(telegramServer.of('sendMessage')).toHaveLength(1))
+            const notice = telegramServer.of('sendMessage')[0]
+            expect(notice?.text).not.toContain('WhatsApp')
+            expect(buttons(notice?.reply_markup)).toEqual([])
+        })
+
+        it('limits each email to 3 messages every 15 minutes', async () => {
+            await link(OWNER)
+            for (let i = 0; i < 3; i++) await send(form({ email: 'Ana@Example.com' })).expect(202)
+            const { body } = await send(form()).expect(429)
+            expect(body.message).toContain('Espera unos minutos')
+            await send(form({ email: 'otra@example.com' })).expect(202)
+        })
     })
 
     it('treats a chat linked by a deactivated user as unlinked until it is linked again', async () => {
