@@ -5,7 +5,8 @@ import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.serv
 import type { AuthUser } from '../common/types/auth-user.js'
 import { addDays, startOfCaracasDay } from '../common/utils/caracas-date.js'
 import { ContentService } from '../content/content.service.js'
-import { isPaymentConfigured } from '../content/content.types.js'
+import { configuredMethods } from '../content/content.types.js'
+import type { PaymentMethod } from '../common/payment-methods.js'
 import { newId } from '../database/id.js'
 import { ExchangeRateService } from '../exchange-rate/exchange-rate.service.js'
 import { readStock } from '../products/product-stock.js'
@@ -23,6 +24,7 @@ import { OrderNote } from './entities/order-note.entity.js'
 import { OrderPayment } from './entities/order-payment.entity.js'
 import { Order } from './entities/order.entity.js'
 import {
+    paymentAmounts,
     paymentFlags,
     toAdminOrder,
     type AdminOrderDto,
@@ -63,7 +65,10 @@ export interface AdminOrdersSummaryDto {
     pendingVerification: number
     pendingPayment: number
     pendingRefunds: number
+    /** Checkout is open: at least one payment method is configured. */
     paymentConfigured: boolean
+    /** The methods checkout offers now. */
+    paymentMethods: PaymentMethod[]
     exchangeRate: {
         available: boolean
         isStale: boolean
@@ -109,15 +114,14 @@ export class AdminOrdersService {
                             .where('o.code ILIKE :like', { like: `%${search}%` })
                             .orWhere('o.customerName ILIKE :like')
                             .orWhere('o.customerEmail ILIKE :like')
+                            .orWhere(
+                                `EXISTS (SELECT 1 FROM "order_payments" p WHERE p."order_id" = o.id AND p."reference" ILIKE :like)`,
+                            )
                         if (digits.length >= 3) {
-                            where
-                                .orWhere(
-                                    `regexp_replace(o.customer_phone, '\\D', '', 'g') LIKE :digits`,
-                                    { digits: `%${digits}%` },
-                                )
-                                .orWhere(
-                                    `EXISTS (SELECT 1 FROM "order_payments" p WHERE p."order_id" = o.id AND p."reference" LIKE :digits)`,
-                                )
+                            where.orWhere(
+                                `regexp_replace(o.customer_phone, '\\D', '', 'g') LIKE :digits`,
+                                { digits: `%${digits}%` },
+                            )
                         }
                     }),
                 )
@@ -207,6 +211,9 @@ export class AdminOrdersService {
                     customerName: order.customerName,
                     customerPhone: order.customerPhone,
                     deliveryMethod: order.deliveryMethod,
+                    paymentMethod: order.paymentMethod,
+                    hasOnOrderItems: order.hasOnOrderItems,
+                    wantsInstallation: order.wantsInstallation,
                     totalUsd: order.totalUsd,
                     totalBs: order.totalBs,
                     itemCount: itemCounts.get(order.id) ?? 0,
@@ -219,8 +226,9 @@ export class AdminOrdersService {
                     refundStatus: order.refundStatus,
                     latestPayment: payment
                         ? {
+                              method: payment.method,
                               reference: payment.reference,
-                              amountBs: payment.amountBs,
+                              amount: paymentAmounts(payment).amount,
                               status: payment.status,
                               ...paymentFlags(payment),
                           }
@@ -259,7 +267,8 @@ export class AdminOrdersService {
             pendingVerification: count('PENDIENTE_VERIFICACION'),
             pendingPayment: count('PENDIENTE_PAGO'),
             pendingRefunds,
-            paymentConfigured: isPaymentConfigured(payment),
+            paymentConfigured: configuredMethods(payment).length > 0,
+            paymentMethods: configuredMethods(payment),
             exchangeRate: {
                 available: current !== null && !current.isStale,
                 isStale: current?.isStale ?? false,
@@ -273,7 +282,7 @@ export class AdminOrdersService {
         const order = await this.dataSource.getRepository(Order).findOne({
             where: { code },
             relations: {
-                items: { design: { assets: true } },
+                items: true,
                 payments: { reviewedBy: true, recordedBy: true },
                 history: { actorUser: true },
                 adminNotes: { author: true },
@@ -281,12 +290,7 @@ export class AdminOrdersService {
             },
         })
         if (!order) throw new NotFoundException(ORDER_NOT_FOUND)
-        const everVerified = (order.payments ?? []).some(
-            (payment) => payment.status === 'VERIFICADO',
-        )
-        const rules = allowedTransitions(order.status, adminActor(user)).filter(
-            (rule) => !(rule.requiresNoVerifiedPayment && everVerified),
-        )
+        const rules = allowedTransitions(order.status, adminActor(user))
         const stockConflict = order.stockConflict
             ? await readLiveStockConflict(this.dataSource.manager, order.stockConflict)
             : null

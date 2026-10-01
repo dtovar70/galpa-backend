@@ -19,8 +19,7 @@ import { Role } from '../auth/role.enum.js'
 import { CurrentUser } from '../common/decorators/current-user.decorator.js'
 import { Roles } from '../common/decorators/roles.decorator.js'
 import type { AuthUser } from '../common/types/auth-user.js'
-import { DesignsService } from '../designs/designs.service.js'
-import { downloadPrivateFile, sendPrivateFile } from '../designs/send-private-file.js'
+import { sendPrivateFile } from '../storage/send-private-file.js'
 import {
     AdminOrdersService,
     type AdminOrderListDto,
@@ -32,7 +31,7 @@ import { AddOrderNoteDto, MarkRefundedDto, TransitionOrderDto } from './dto/tran
 import type { AdminOrderDto } from './order.mapper.js'
 import { OrderAccessService, type IssuedAccessLink } from './order-access.service.js'
 import { ReceiptService } from './receipt/receipt.service.js'
-import { sendReceipt } from './receipt/send-receipt.js'
+import { sendPdf } from '../common/http/send-pdf.js'
 import { OrderWhatsAppService, type WhatsAppMessageDto } from './whatsapp/order-whatsapp.service.js'
 import { PROOF_FIELD, PROOF_UPLOAD_OPTIONS, ProofUploadErrorsFilter } from './payment-upload.js'
 
@@ -48,7 +47,6 @@ export class AdminOrdersController {
         private readonly access: OrderAccessService,
         private readonly receipts: ReceiptService,
         private readonly whatsapp: OrderWhatsAppService,
-        private readonly designs: DesignsService,
     ) {}
 
     @Get()
@@ -167,7 +165,7 @@ export class AdminOrdersController {
         @CurrentUser() user: AuthUser,
         @Res() res: Response,
     ): Promise<void> {
-        sendReceipt(res, await this.receipts.forAdmin(code, user.id))
+        sendPdf(res, await this.receipts.forAdmin(code, user.id))
     }
 
     /**
@@ -180,69 +178,6 @@ export class AdminOrdersController {
         @Param('paymentId') paymentId: string,
         @Res() res: Response,
     ): Promise<void> {
-        const access = await this.orders.paymentProof(code, paymentId)
-        res.setHeader('Cache-Control', 'private, no-store')
-        if (access.kind === 'redirect') {
-            res.redirect(HttpStatus.FOUND, access.url)
-            return
-        }
-        res.setHeader('Content-Type', access.contentType)
-        res.setHeader('Content-Length', String(access.size))
-        res.setHeader('Content-Disposition', 'inline')
-        res.setHeader('X-Content-Type-Options', 'nosniff')
-        access.stream.on('error', () => res.destroy())
-        access.stream.pipe(res)
-    }
-
-    /** The mockup preview of a line's own design (stream, or a short-lived signed redirect). */
-    @Get(':code/items/:itemId/design/preview')
-    async designPreview(
-        @Param('code') code: string,
-        @Param('itemId') itemId: string,
-        @Res() res: Response,
-    ): Promise<void> {
-        const file = await this.designs.fileForAdmin(code, itemId, { kind: 'preview' })
-        sendPrivateFile(res, file.access)
-    }
-
-    /** The print-ready "arte final" (transparent PNG), named `MR-000123-linea1-arte-final.png`. */
-    @Get(':code/items/:itemId/design/artwork')
-    async designArtwork(
-        @Param('code') code: string,
-        @Param('itemId') itemId: string,
-        @Res() res: Response,
-    ): Promise<void> {
-        const file = await this.designs.fileForAdmin(code, itemId, { kind: 'artwork' })
-        await downloadPrivateFile(res, file.access, file.downloadName)
-    }
-
-    /** The original of image `number` (1-based), named `MR-000123-linea1-imagen1.jpg`. */
-    @Get(':code/items/:itemId/design/originals/:number')
-    async designOriginal(
-        @Param('code') code: string,
-        @Param('itemId') itemId: string,
-        @Param('number') number: string,
-        @Res() res: Response,
-    ): Promise<void> {
-        const file = await this.designs.fileForAdmin(code, itemId, {
-            kind: 'original',
-            number: Number(number),
-        })
-        await downloadPrivateFile(res, file.access, file.downloadName)
-    }
-
-    /** The same original shown inline (the admin's thumbnails). */
-    @Get(':code/items/:itemId/design/originals/:number/view')
-    async designOriginalView(
-        @Param('code') code: string,
-        @Param('itemId') itemId: string,
-        @Param('number') number: string,
-        @Res() res: Response,
-    ): Promise<void> {
-        const file = await this.designs.fileForAdmin(code, itemId, {
-            kind: 'original',
-            number: Number(number),
-        })
-        sendPrivateFile(res, file.access)
+        sendPrivateFile(res, await this.orders.paymentProof(code, paymentId))
     }
 }

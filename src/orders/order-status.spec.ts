@@ -44,19 +44,16 @@ describe('order transition map', () => {
         expect(checkTransition('CANCELADO', 'PENDIENTE_VERIFICACION', ADMIN).ok).toBe(false)
     })
 
-    it('reactivates an expired order (staff) or a never-paid cancelled one (ADMIN only)', () => {
+    it('reactivates an expired order (staff only); a cancelled one stays closed', () => {
         for (const actor of [ADMIN, EDITOR]) {
             const expired = checkTransition('EXPIRADO', 'PENDIENTE_PAGO', actor)
             expect(expired.ok && expired.rule.reactivates && expired.rule.reservesStock).toBe(true)
         }
         expect(checkTransition('EXPIRADO', 'PENDIENTE_PAGO', CUSTOMER).ok).toBe(false)
         expect(checkTransition('EXPIRADO', 'PENDIENTE_PAGO', TELEGRAM).ok).toBe(false)
-
-        const cancelled = checkTransition('CANCELADO', 'PENDIENTE_PAGO', ADMIN)
-        expect(cancelled.ok && cancelled.rule.requiresNoVerifiedPayment).toBe(true)
-        expect(checkTransition('CANCELADO', 'PENDIENTE_PAGO', EDITOR)).toEqual({
+        expect(checkTransition('CANCELADO', 'PENDIENTE_PAGO', ADMIN)).toEqual({
             ok: false,
-            reason: 'forbidden',
+            reason: 'invalid',
         })
     })
 
@@ -73,34 +70,42 @@ describe('order transition map', () => {
         )
     })
 
-    it('follows the fulfilment steps in order', () => {
-        const path = [
-            'PAGO_VERIFICADO',
-            'EN_PRODUCCION',
-            'LISTO_PARA_ENTREGA',
-            'ENVIADO',
-            'ENTREGADO',
+    it('follows the fulfilment steps: delivery, pickup and goods ordered from the supplier', () => {
+        const paths = [
+            ['PAGO_VERIFICADO', 'EN_PREPARACION', 'DESPACHADO', 'ENTREGADO'],
+            ['PAGO_VERIFICADO', 'EN_PREPARACION', 'LISTO_PARA_RETIRO', 'ENTREGADO'],
+            ['PAGO_VERIFICADO', 'ESPERANDO_MERCANCIA', 'EN_PREPARACION'],
         ] as const
-        for (let index = 0; index < path.length - 1; index += 1) {
-            expect(checkTransition(path[index], path[index + 1], EDITOR).ok).toBe(true)
+        for (const path of paths) {
+            for (let index = 0; index < path.length - 1; index += 1) {
+                expect(checkTransition(path[index]!, path[index + 1]!, EDITOR).ok).toBe(true)
+                expect(checkTransition(path[index]!, path[index + 1]!, TELEGRAM).ok).toBe(true)
+            }
         }
-        expect(checkTransition('LISTO_PARA_ENTREGA', 'ENTREGADO', EDITOR).ok).toBe(true)
-        expect(checkTransition('PAGO_VERIFICADO', 'ENVIADO', ADMIN)).toEqual({
+        expect(checkTransition('PAGO_VERIFICADO', 'DESPACHADO', ADMIN)).toEqual({
             ok: false,
             reason: 'invalid',
         })
+        expect(checkTransition('ESPERANDO_MERCANCIA', 'DESPACHADO', ADMIN).ok).toBe(false)
     })
 
-    it('reserves cancelling for ADMIN, with a reason, restoring stock unless shipped', () => {
-        const cancel = checkTransition('EN_PRODUCCION', 'CANCELADO', ADMIN)
-        expect(cancel.ok && cancel.rule.requiresReason && cancel.rule.restoresStock).toBe(true)
-        expect(checkTransition('EN_PRODUCCION', 'CANCELADO', EDITOR)).toEqual({
-            ok: false,
-            reason: 'forbidden',
-        })
-        const shipped = checkTransition('ENVIADO', 'CANCELADO', ADMIN)
-        expect(shipped.ok && shipped.rule.restoresStock).toBe(false)
-        expect(checkTransition('ENTREGADO', 'CANCELADO', ADMIN).ok).toBe(false)
+    it('reserves cancelling for ADMIN, with a reason, until the order leaves the store', () => {
+        for (const from of ['PAGO_VERIFICADO', 'ESPERANDO_MERCANCIA', 'EN_PREPARACION'] as const) {
+            const cancel = checkTransition(from, 'CANCELADO', ADMIN)
+            expect(cancel.ok && cancel.rule.requiresReason && cancel.rule.restoresStock).toBe(true)
+            expect(checkTransition(from, 'CANCELADO', EDITOR)).toEqual({
+                ok: false,
+                reason: 'forbidden',
+            })
+        }
+        for (const from of [
+            'PENDIENTE_VERIFICACION',
+            'DESPACHADO',
+            'LISTO_PARA_RETIRO',
+            'ENTREGADO',
+        ] as const) {
+            expect(checkTransition(from, 'CANCELADO', ADMIN).ok).toBe(false)
+        }
     })
 
     it('only lets the scheduler expire unpaid orders, restoring their stock', () => {
@@ -110,9 +115,9 @@ describe('order transition map', () => {
         expect(checkTransition('PENDIENTE_VERIFICACION', 'EXPIRADO', SYSTEM).ok).toBe(false)
     })
 
-    it('has a terminal status, reopens closed ones only by reactivation, only known targets', () => {
+    it('has terminal statuses, reopens an expired one only by reactivation, only known targets', () => {
         expect(ORDER_TRANSITIONS.ENTREGADO).toEqual([])
-        expect(ORDER_TRANSITIONS.CANCELADO.map((rule) => rule.to)).toEqual(['PENDIENTE_PAGO'])
+        expect(ORDER_TRANSITIONS.CANCELADO).toEqual([])
         expect(ORDER_TRANSITIONS.EXPIRADO.map((rule) => rule.to)).toEqual([
             'PENDIENTE_VERIFICACION',
             'PENDIENTE_PAGO',
@@ -134,9 +139,13 @@ describe('order transition map', () => {
         expect(allowedTransitions('PENDIENTE_VERIFICACION', EDITOR).map((rule) => rule.to)).toEqual(
             ['PAGO_VERIFICADO', 'PAGO_RECHAZADO'],
         )
-        expect(allowedTransitions('PENDIENTE_VERIFICACION', ADMIN).map((rule) => rule.to)).toEqual([
-            'PAGO_VERIFICADO',
-            'PAGO_RECHAZADO',
+        expect(allowedTransitions('PAGO_VERIFICADO', EDITOR).map((rule) => rule.to)).toEqual([
+            'ESPERANDO_MERCANCIA',
+            'EN_PREPARACION',
+        ])
+        expect(allowedTransitions('PAGO_VERIFICADO', ADMIN).map((rule) => rule.to)).toEqual([
+            'ESPERANDO_MERCANCIA',
+            'EN_PREPARACION',
             'CANCELADO',
         ])
     })
@@ -144,10 +153,10 @@ describe('order transition map', () => {
     it('explains an invalid move in Spanish', () => {
         const labels: Partial<Record<string, string>> = {
             ENTREGADO: 'Entregado',
-            EN_PRODUCCION: 'En producción',
+            EN_PREPARACION: 'Preparando despacho',
         }
         expect(
-            invalidTransitionMessage('ENTREGADO', 'EN_PRODUCCION', (code) => labels[code] ?? code),
-        ).toBe('No se puede pasar un pedido de «Entregado» a «En producción».')
+            invalidTransitionMessage('ENTREGADO', 'EN_PREPARACION', (code) => labels[code] ?? code),
+        ).toBe('No se puede pasar un pedido de «Entregado» a «Preparando despacho».')
     })
 })

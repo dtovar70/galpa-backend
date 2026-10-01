@@ -13,23 +13,24 @@ import {
 
 const VALUES: WhatsAppValues = {
     nombre: 'Ana',
-    pedido: 'MR-000123',
-    enlace: 'https://manadarusso.com/pedido/MR-000123?t=abc',
-    total: '$36,00 (Bs. 30.760,69)',
+    pedido: 'GP-000123',
+    enlace: 'https://galpa.com.ve/pedido/GP-000123?t=abc',
+    total: '$640,00 (Bs. 98.856,77)',
+    metodo: 'Pago Móvil',
     motivo: 'La referencia no coincide',
-    marca: 'Manada Russo Creativa',
+    marca: 'Corporación Galpa 2022 C.A.',
     envio: 'MRW, guía 123456',
-    comprobante: 'https://api.manadarusso.com/api/orders/MR-000123/receipt.pdf?t=abc',
+    comprobante: 'https://api.galpa.com.ve/api/orders/GP-000123/receipt.pdf?t=abc',
 }
 
 describe('WhatsApp templates', () => {
     it('renders every placeholder', () => {
         expect(renderWhatsAppTemplate(DEFAULT_WHATSAPP_TEMPLATES.PAGO_RECHAZADO, VALUES)).toBe(
-            'Hola Ana 👋 Revisamos el pago de tu pedido MR-000123 y no pudimos aprobarlo: La referencia no coincide. Puedes subir un nuevo comprobante aquí: https://manadarusso.com/pedido/MR-000123?t=abc',
+            'Hola Ana. Revisamos el pago de tu pedido GP-000123 y no pudimos aprobarlo: La referencia no coincide. Puedes subir un nuevo comprobante aquí: https://galpa.com.ve/pedido/GP-000123?t=abc',
         )
         expect(
             renderWhatsAppTemplate(
-                '{nombre}|{pedido}|{enlace}|{total}|{motivo}|{marca}|{envio}|{comprobante}',
+                '{nombre}|{pedido}|{enlace}|{total}|{metodo}|{motivo}|{marca}|{envio}|{comprobante}',
                 VALUES,
             ),
         ).toBe(Object.values(VALUES).join('|'))
@@ -38,7 +39,7 @@ describe('WhatsApp templates', () => {
     it('tidies what an empty value leaves behind', () => {
         const values = { ...VALUES, motivo: '' }
         expect(renderWhatsAppTemplate(DEFAULT_WHATSAPP_TEMPLATES.CANCELADO, values)).toBe(
-            'Hola Ana. Te escribimos por tu pedido MR-000123: lo cancelamos. Si hiciste un pago o tienes alguna duda, respóndenos por aquí y lo resolvemos juntos.',
+            'Hola Ana. Te escribimos por tu pedido GP-000123: lo cancelamos. Si hiciste un pago o tienes alguna duda, respóndenos por aquí y lo resolvemos.',
         )
         expect(renderWhatsAppTemplate('Motivo: {motivo}.\n  Fin  ', values)).toBe('Motivo.\nFin')
     })
@@ -55,11 +56,12 @@ describe('WhatsApp templates', () => {
             'comprobante',
             'enlace',
         ])
+        expect(usedPlaceholders(DEFAULT_WHATSAPP_TEMPLATES.PENDIENTE_PAGO).has('metodo')).toBe(true)
     })
 
     it('rejects unknown placeholders, stray braces and a misplaced {comprobante}', () => {
         expect(whatsAppTemplateError('Hola {cliente} y {x}')).toBe(
-            'El mensaje de WhatsApp usa marcadores desconocidos: {cliente}, {x}. Solo se admiten {nombre}, {pedido}, {enlace}, {total}, {motivo}, {marca}, {envio}, {comprobante}.',
+            'El mensaje de WhatsApp usa marcadores desconocidos: {cliente}, {x}. Solo se admiten {nombre}, {pedido}, {enlace}, {total}, {metodo}, {motivo}, {marca}, {envio}, {comprobante}.',
         )
         expect(whatsAppTemplateError('Hola {Nombre}')).toMatch(/marcador desconocido: \{Nombre\}/)
         expect(whatsAppTemplateError('Hola {nombre')).toBe(

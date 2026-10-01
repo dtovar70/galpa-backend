@@ -45,9 +45,6 @@ export class ProductVariant {
     })
     priceDelta: number
 
-    @Column({ name: 'color_hex', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH, nullable: true })
-    colorHex: string | null
-
     @Column({ name: 'sort_order', type: 'integer', default: 0 })
     sortOrder: number
 

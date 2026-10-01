@@ -13,6 +13,7 @@ import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
 import { ORDER_LIMITS } from '../dto/field-names.js'
 import { User } from '../../auth/entities/user.entity.js'
 import { Bank } from '../../catalogs/entities/bank.entity.js'
+import { PAYMENT_METHODS, type PaymentMethod } from '../../common/payment-methods.js'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
 import { Order } from './order.entity.js'
 
@@ -23,12 +24,23 @@ export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
 export const PAYMENT_SOURCES = ['customer', 'admin'] as const
 export type PaymentSource = (typeof PAYMENT_SOURCES)[number]
 
-/** Every Pago Móvil proof recorded for an order (by the customer or an admin), rejected ones included. */
+const methodList = (methods: readonly PaymentMethod[]) =>
+    methods.map((method) => `'${method}'`).join(', ')
 
+/**
+ * Every payment proof recorded for an order (by the customer or an admin), rejected ones
+ * included. Bolívar methods (Pago Móvil, transfer) carry the Bs amounts; dollar methods (Zelle,
+ * Binance) the USD ones. Fields that do not apply to the method are null.
+ */
 @Entity({ name: 'order_payments' })
 @Index('order_payments_order_id_idx', ['orderId'])
-@Index('order_payments_reference_idx', ['reference'])
+@Index('order_payments_method_reference_idx', ['method', 'reference'])
 @Check('order_payments_status_check', `"status" IN ('PENDIENTE', 'VERIFICADO', 'RECHAZADO')`)
+@Check('order_payments_method_check', `"method" IN (${methodList(PAYMENT_METHODS)})`)
+@Check(
+    'order_payments_amounts_check',
+    `("method" IN (${methodList(['PAGO_MOVIL', 'TRANSFERENCIA'])}) AND "amount_bs" IS NOT NULL AND "expected_bs" IS NOT NULL) OR ("method" IN (${methodList(['ZELLE', 'BINANCE'])}) AND "amount_usd" IS NOT NULL AND "expected_usd" IS NOT NULL)`,
+)
 @Check('order_payments_source_check', `"source" IN ('customer', 'admin')`)
 @Check(
     'order_payments_rejection_reason_length_check',
@@ -51,26 +63,34 @@ export class OrderPayment {
     @Column({ type: 'text', default: 'PENDIENTE' })
     status: PaymentStatus
 
-    /** Bank reference number (digits). */
+    @Column({ type: 'text' })
+    method: PaymentMethod
+
+    /**
+     * Bank reference (digits) for Pago Móvil and transfers; Zelle confirmation or Binance order
+     * id (letters and digits, uppercased) otherwise.
+     */
     @Column({ type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     reference: string
 
-    @Column({ name: 'payer_bank_code', type: 'varchar', length: 4 })
-    payerBankCode: string
+    /** Pago Móvil and transfers. */
+    @Column({ name: 'payer_bank_code', type: 'varchar', length: 4, nullable: true })
+    payerBankCode: string | null
 
     /** A referenced bank can be deactivated but never deleted. */
-    @ManyToOne(() => Bank, { onDelete: 'RESTRICT', onUpdate: 'CASCADE', nullable: false })
+    @ManyToOne(() => Bank, { onDelete: 'RESTRICT', onUpdate: 'CASCADE', nullable: true })
     @JoinColumn({
         name: 'payer_bank_code',
         foreignKeyConstraintName: 'order_payments_payer_bank_code_fkey',
     })
-    payerBank: Relation<Bank>
+    payerBank: Relation<Bank> | null
 
-    @Column({ name: 'payer_bank_name', type: 'text' })
-    payerBankName: string
+    @Column({ name: 'payer_bank_name', type: 'text', nullable: true })
+    payerBankName: string | null
 
-    @Column({ name: 'payer_phone', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
-    payerPhone: string
+    /** Pago Móvil only. */
+    @Column({ name: 'payer_phone', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH, nullable: true })
+    payerPhone: string | null
 
     @Column({
         name: 'payer_id_number',
@@ -79,6 +99,19 @@ export class OrderPayment {
         nullable: true,
     })
     payerIdNumber: string | null
+
+    /** Zelle: the account holder's name. */
+    @Column({ name: 'payer_name', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH, nullable: true })
+    payerName: string | null
+
+    /** Zelle: email or phone used; Binance: Pay ID or email. */
+    @Column({
+        name: 'payer_account',
+        type: 'varchar',
+        length: TEXT_INPUT_MAX_LENGTH,
+        nullable: true,
+    })
+    payerAccount: string | null
 
     /** Day the customer says they paid ("YYYY-MM-DD"). */
     @Column({ name: 'paid_on', type: 'date' })
@@ -89,9 +122,10 @@ export class OrderPayment {
         type: 'numeric',
         precision: 14,
         scale: 2,
+        nullable: true,
         transformer: decimalTransformer,
     })
-    amountBs: number
+    amountBs: number | null
 
     /** The order's Bs total when the proof was sent, to flag a different amount. */
     @Column({
@@ -99,11 +133,37 @@ export class OrderPayment {
         type: 'numeric',
         precision: 14,
         scale: 2,
+        nullable: true,
         transformer: decimalTransformer,
     })
-    expectedBs: number
+    expectedBs: number | null
 
-    /** The same reference was sent for another order that is not cancelled or expired. */
+    /** Zelle and Binance: dollars paid. */
+    @Column({
+        name: 'amount_usd',
+        type: 'numeric',
+        precision: 10,
+        scale: 2,
+        nullable: true,
+        transformer: decimalTransformer,
+    })
+    amountUsd: number | null
+
+    /** The order's USD total when the proof was sent. */
+    @Column({
+        name: 'expected_usd',
+        type: 'numeric',
+        precision: 10,
+        scale: 2,
+        nullable: true,
+        transformer: decimalTransformer,
+    })
+    expectedUsd: number | null
+
+    /**
+     * The same reference was sent with the same method for another order that is not cancelled
+     * or expired.
+     */
     @Column({ name: 'duplicate_reference', type: 'boolean', default: false })
     duplicateReference: boolean
 

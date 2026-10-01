@@ -59,7 +59,7 @@ export const msg = {
         `${field.name} debe tener el formato ${example}.`,
     invalid: (field: FieldName) => `${field.name} no es ${agree(field, 'válido', 'válida')}.`,
     hexColor: (field: FieldName) =>
-        `${field.name} debe tener formato hexadecimal, por ejemplo #FFB3D1.`,
+        `${field.name} debe tener formato hexadecimal, por ejemplo #10B981.`,
 } as const
 
 /**

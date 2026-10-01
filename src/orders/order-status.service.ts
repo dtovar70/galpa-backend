@@ -100,12 +100,12 @@ function units(count: number): string {
     return count === 1 ? '1 unidad' : `${count} unidades`
 }
 
-/** "Franela X – Talla M" (just the product name on lines without a variant). */
+/** "Split X – 220V" (just the product name on lines without a variant). */
 export function stockLineName(line: StockConflictLine): string {
     return stockItemName(line.productName, line.variantLabel)
 }
 
-/** "«Franela X – Talla M» pidió 3, hay 1" for each line. */
+/** "«Split X – 220V» pidió 3, hay 1" for each line. */
 export function describeStockLines(lines: readonly StockConflictLine[]): string {
     return lines
         .map((line) => `«${stockLineName(line)}» pidió ${line.requested}, hay ${line.available}`)
@@ -114,7 +114,7 @@ export function describeStockLines(lines: readonly StockConflictLine[]): string 
 
 /**
  * The one place where an order changes status. The admin HTTP API, the payment-proof upload,
- * the expiry job and the future Telegram bot all go through `transition()` (or, inside an
+ * the expiry job and the Telegram bot all go through `transition()` (or, inside an
  * existing transaction, `applyTransition()`), so the allowed-transition map, the side effects
  * (stock, payment review, refunds) and the history/event trail can never diverge.
  */
@@ -208,17 +208,6 @@ export class OrderStatusService {
                 'Para pasar el pedido a verificación, registra el pago con sus datos.',
             )
         }
-        if (rule.requiresNoVerifiedPayment) {
-            const verified = await manager.find(OrderPayment, {
-                where: { orderId: order.id, status: 'VERIFICADO' },
-                select: { id: true },
-            })
-            if (verified.length) {
-                throw new ConflictException(
-                    'Este pedido tuvo un pago verificado, así que no se puede reactivar.',
-                )
-            }
-        }
         const refund = to === 'CANCELADO' ? await this.refundAnswer(manager, order, options) : null
         const conflictToResolve =
             to === 'PAGO_VERIFICADO' && order.stockConflict && !order.stockConflict.resolvedAt
@@ -282,10 +271,7 @@ export class OrderStatusService {
                 reviewedAt: now,
                 reviewedById: reviewerId,
             })
-        } else if (
-            to === 'PAGO_RECHAZADO' ||
-            (to === 'CANCELADO' && from === 'PENDIENTE_VERIFICACION')
-        ) {
+        } else if (to === 'PAGO_RECHAZADO') {
             await this.reviewPendingPayment(manager, order.id, {
                 status: 'RECHAZADO',
                 rejectionReason: trimmedNote,
@@ -424,9 +410,24 @@ export class OrderStatusService {
         await manager.update(OrderPayment, { orderId, status: 'PENDIENTE' }, changes)
     }
 
+    /** The lines that hold stock: STOCK-mode snapshots (ON_ORDER and free lines never do). */
+    private stockLines(manager: EntityManager, orderId: string) {
+        return manager.find(OrderItem, {
+            where: { orderId, stockMode: 'STOCK' },
+            select: {
+                productId: true,
+                variantId: true,
+                productName: true,
+                variantLabel: true,
+                quantity: true,
+                sortOrder: true,
+            },
+        })
+    }
+
     /**
      * Takes the order's quantities out of stock again, with the same row locks as checkout,
-     * per variant (`order_items.variant_id`). `strict`: all or nothing (reactivation without
+     * per variant (`order_items.variant_id`), for its STOCK-mode lines only. `strict`: all or nothing (reactivation without
      * force). Otherwise every variant gives what it has, never going below 0, and the shortfall
      * is returned as a stock conflict. A line whose product or variant was deleted gives nothing
      * and shows up as a conflict line.
@@ -437,17 +438,7 @@ export class OrderStatusService {
         now: Date,
         { strict }: { strict: boolean },
     ): Promise<ReserveResult> {
-        const items = await manager.find(OrderItem, {
-            where: { orderId },
-            select: {
-                productId: true,
-                variantId: true,
-                productName: true,
-                variantLabel: true,
-                quantity: true,
-                sortOrder: true,
-            },
-        })
+        const items = await this.stockLines(manager, orderId)
         const locked = await lockStock(
             manager,
             items.flatMap((item) => (item.productId ? [item.productId] : [])),
@@ -524,15 +515,12 @@ export class OrderStatusService {
     }
 
     /**
-     * Puts back what the order holds: every line's quantity into its variant, except for the
-     * variants of a stock conflict, which only give back what was actually taken. A line whose
-     * product or variant no longer exists gives nothing back (logged).
+     * Puts back what the order holds: every STOCK-mode line's quantity into its variant, except
+     * for the variants of a stock conflict, which only give back what was actually taken. A line
+     * whose product or variant no longer exists gives nothing back (logged).
      */
     private async restoreStock(manager: EntityManager, order: Order): Promise<void> {
-        const items = await manager.find(OrderItem, {
-            where: { orderId: order.id },
-            select: { productId: true, variantId: true, productName: true, quantity: true },
-        })
+        const items = await this.stockLines(manager, order.id)
         const locked = await lockStock(
             manager,
             items.flatMap((item) => (item.productId ? [item.productId] : [])),

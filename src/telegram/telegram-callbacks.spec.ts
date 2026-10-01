@@ -85,17 +85,17 @@ describe('SlidingWindowLimiter', () => {
 
 describe('bot helpers', () => {
     it('normalizes order codes', () => {
-        expect(normalizeOrderCode('MR-000012')).toBe('MR-000012')
-        expect(normalizeOrderCode('mr12')).toBe('MR-000012')
-        expect(normalizeOrderCode(' 12 ')).toBe('MR-000012')
-        expect(normalizeOrderCode('MR-1234567')).toBe('MR-1234567')
+        expect(normalizeOrderCode('GP-000012')).toBe('GP-000012')
+        expect(normalizeOrderCode('gp12')).toBe('GP-000012')
+        expect(normalizeOrderCode(' 12 ')).toBe('GP-000012')
+        expect(normalizeOrderCode('GP-1234567')).toBe('GP-1234567')
         expect(normalizeOrderCode('pedido')).toBeNull()
         expect(normalizeOrderCode('')).toBeNull()
     })
 
     it('only uses URL buttons Telegram accepts', () => {
-        expect(isButtonUrl('https://manadarusso.com/admin/pedidos/MR-000001')).toBe(true)
-        expect(isButtonUrl('http://localhost:5173/admin/pedidos/MR-000001')).toBe(false)
+        expect(isButtonUrl('https://galpa.com.ve/admin/pedidos/GP-000001')).toBe(true)
+        expect(isButtonUrl('http://localhost:5173/admin/pedidos/GP-000001')).toBe(false)
         expect(isButtonUrl('http://127.0.0.1:5173/x')).toBe(false)
         expect(isButtonUrl('http://intranet/x')).toBe(false)
         expect(isButtonUrl('javascript:alert(1)')).toBe(false)

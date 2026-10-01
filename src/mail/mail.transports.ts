@@ -27,8 +27,11 @@ export class LogMailTransport implements MailTransport {
     private readonly logger = new Logger('Mail')
 
     send(message: OutgoingMail): Promise<void> {
+        const files = message.attachments?.length
+            ? ` with ${message.attachments.length} attachment(s)`
+            : ''
         this.logger.log(
-            `[MAIL_DRIVER=log] Not sent: "${message.subject}" to ${maskEmail(message.to)}`,
+            `[MAIL_DRIVER=log] Not sent: "${message.subject}" to ${maskEmail(message.to)}${files}`,
         )
         return Promise.resolve()
     }
@@ -59,11 +62,16 @@ export class SmtpMailTransport implements MailTransport {
     async send(message: OutgoingMail): Promise<void> {
         await this.transporter.sendMail({
             from: this.envelope.from,
-            replyTo: this.envelope.replyTo,
+            replyTo: message.replyTo ?? this.envelope.replyTo,
             to: message.to,
             subject: message.subject,
             html: message.html,
             text: message.text,
+            attachments: message.attachments?.map((file) => ({
+                filename: file.filename,
+                content: file.content,
+                contentType: file.contentType,
+            })),
         })
     }
 }
@@ -92,7 +100,18 @@ export class ResendMailTransport implements MailTransport {
                 subject: message.subject,
                 html: message.html,
                 text: message.text,
-                ...(this.envelope.replyTo ? { reply_to: this.envelope.replyTo } : {}),
+                ...((message.replyTo ?? this.envelope.replyTo)
+                    ? { reply_to: message.replyTo ?? this.envelope.replyTo }
+                    : {}),
+                ...(message.attachments?.length
+                    ? {
+                          attachments: message.attachments.map((file) => ({
+                              filename: file.filename,
+                              content: file.content.toString('base64'),
+                              content_type: file.contentType,
+                          })),
+                      }
+                    : {}),
             }),
             signal: AbortSignal.timeout(MAIL_TIMEOUT_MS),
         })

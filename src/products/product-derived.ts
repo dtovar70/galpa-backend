@@ -2,16 +2,17 @@ import { normalizeText } from '../common/utils/text.util.js'
 
 export interface DerivedSource {
     name: string
+    brand: string
+    model: string | null
+    sku: string | null
     description: string
-    printText: string
     tags: string[]
 }
 
 /**
- * Same ranking as the frontend mock (products.api.ts): bestsellers (+10) first, then new
- * products (+4). Ties fall back to the newest product (see `CATALOG_ORDER_BY.relevance`).
- * The shop has no reviews, so the seeded `rating` column is deliberately ignored. Stored in
- * `relevance_score` so the database can sort and paginate.
+ * Relevance ranking: bestsellers (+10) first, then new products (+4). Ties fall back to the
+ * newest product (see `CATALOG_ORDER_BY.relevance`). Stored in `relevance_score` so the
+ * database can sort and paginate.
  */
 export function computeRelevanceScore(source: Pick<DerivedSource, 'tags'>): number {
     const bestsellerBoost = source.tags.includes('bestseller') ? 10 : 0
@@ -19,15 +20,25 @@ export function computeRelevanceScore(source: Pick<DerivedSource, 'tags'>): numb
     return bestsellerBoost + newBoost
 }
 
-/** Words a customer may type for a tag: the store shows `bestseller` as "favorito". */
-const TAG_SEARCH_ALIASES: Record<string, string> = { bestseller: 'favorito' }
+/** Words a customer may type for a tag: the store shows `bestseller` as "más vendido". */
+const TAG_SEARCH_ALIASES: Record<string, string[]> = { bestseller: ['mas', 'vendido'] }
 
-/** Accent-insensitive haystack for search (name, description, printText, tags and aliases). */
+/**
+ * Accent-insensitive haystack for search: name, brand, model, SKU, description, tags and their
+ * aliases.
+ */
 export function computeSearchText(source: DerivedSource): string {
-    const tagWords = source.tags.flatMap((tag) =>
-        TAG_SEARCH_ALIASES[tag] ? [tag, TAG_SEARCH_ALIASES[tag]] : [tag],
+    const tagWords = source.tags.flatMap((tag) => [tag, ...(TAG_SEARCH_ALIASES[tag] ?? [])])
+    return normalizeText(
+        [
+            source.name,
+            source.brand,
+            source.model ?? '',
+            source.sku ?? '',
+            source.description,
+            ...tagWords,
+        ].join(' '),
     )
-    return normalizeText([source.name, source.description, source.printText, ...tagWords].join(' '))
 }
 
 export function computeDerivedFields(source: DerivedSource): {

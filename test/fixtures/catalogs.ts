@@ -12,12 +12,13 @@ import { DEFAULT_WHATSAPP_TEMPLATES } from '../../src/orders/whatsapp/whatsapp-t
  */
 const LABELS: Record<(typeof ORDER_STATUSES)[number], [label: string, group: string]> = {
     PENDIENTE_PAGO: ['Pendiente de pago', 'POR_PAGAR'],
-    PENDIENTE_VERIFICACION: ['Pendiente por verificación', 'POR_VERIFICAR'],
-    PAGO_VERIFICADO: ['Pago verificado', 'EN_CURSO'],
+    PENDIENTE_VERIFICACION: ['Comprobante por verificar', 'POR_VERIFICAR'],
+    PAGO_VERIFICADO: ['Pago aprobado', 'EN_CURSO'],
     PAGO_RECHAZADO: ['Pago rechazado', 'POR_PAGAR'],
-    EN_PRODUCCION: ['En producción', 'EN_CURSO'],
-    LISTO_PARA_ENTREGA: ['Listo para entrega', 'EN_CURSO'],
-    ENVIADO: ['Enviado', 'EN_CURSO'],
+    ESPERANDO_MERCANCIA: ['Esperando mercancía (bajo pedido)', 'EN_CURSO'],
+    EN_PREPARACION: ['Preparando despacho', 'EN_CURSO'],
+    LISTO_PARA_RETIRO: ['Listo para retiro', 'EN_CURSO'],
+    DESPACHADO: ['Despachado', 'EN_CURSO'],
     ENTREGADO: ['Entregado', 'CERRADOS'],
     CANCELADO: ['Cancelado', 'CERRADOS'],
     EXPIRADO: ['Expirado', 'CERRADOS'],

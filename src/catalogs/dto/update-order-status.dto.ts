@@ -21,7 +21,7 @@ import {
 import { Trim } from './trim.js'
 
 /** Placeholders the customer message may use, filled in by the storefront. */
-export const CUSTOMER_MESSAGE_PLACEHOLDERS = ['produccion', 'marca'] as const
+export const CUSTOMER_MESSAGE_PLACEHOLDERS = ['despacho', 'marca'] as const
 
 const ONLY_KNOWN_PLACEHOLDERS = new RegExp(
     `^(?:[^{}]|\\{(?:${CUSTOMER_MESSAGE_PLACEHOLDERS.join('|')})\\})*$`,
@@ -75,7 +75,7 @@ export class UpdateOrderStatusDto {
         message: msg.maxLength(FIELD.customerDescription, CATALOG_DESCRIPTION_MAX_LENGTH),
     })
     @Matches(ONLY_KNOWN_PLACEHOLDERS, {
-        message: 'El mensaje al cliente solo admite los marcadores {produccion} y {marca}.',
+        message: 'El mensaje al cliente solo admite los marcadores {despacho} y {marca}.',
     })
     customerDescription?: string | null
 

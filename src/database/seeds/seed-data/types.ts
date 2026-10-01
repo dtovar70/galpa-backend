@@ -1,10 +1,8 @@
-/**
- * Seed-only shapes. They mirror the frontend mock types (src/@types/product.ts in
- * frontend-cups) so the data files can be copied over verbatim.
- */
-export type SeedCategorySlug = 'mugs' | 'tees' | 'keychains'
+/** Seed-only shapes for the demo catalog (see categories.data.ts and products.data.ts). */
+export type SeedCategorySlug =
+    'aires-residenciales' | 'aires-comerciales' | 'repuestos' | 'accesorios'
 
-export type SeedProductTag = 'nuevo' | 'bestseller' | 'oferta' | 'personalizable'
+export type SeedProductTag = 'nuevo' | 'bestseller' | 'oferta'
 
 export interface SeedCategory {
     slug: SeedCategorySlug
@@ -12,13 +10,15 @@ export interface SeedCategory {
     tagline: string
     description: string
     colorHex: string
+    /** Lucide icon name. */
+    icon: string
 }
 
 export interface SeedVariant {
     id: string
     label: string
     priceDelta: number
-    colorHex?: string
+    stock: number
 }
 
 export interface SeedProduct {
@@ -26,16 +26,23 @@ export interface SeedProduct {
     slug: string
     name: string
     category: SeedCategorySlug
+    brand: string
+    model: string | null
+    sku: string
     price: number
     compareAtPrice?: number
-    printText: string
-    colorHex: string
+    stockMode: 'STOCK' | 'ON_ORDER'
+    /** Units for a product without variants (ignored with variants or ON_ORDER). */
+    stock: number
+    leadTimeDays: number | null
+    btu: number | null
+    voltage: string | null
+    isInverter: boolean | null
+    refrigerant: string | null
     description: string
     highlights: string[]
+    specs: { label: string; value: string }[]
     variants: SeedVariant[]
-    rating: number
-    reviewCount: number
     tags: SeedProductTag[]
-    stock: number
     createdAt: string
 }

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import { OrderStatusCatalogService } from '../../catalogs/order-status-catalog.service.js'
+import { PAYMENT_METHOD_LABELS, paysInBolivars } from '../../common/payment-methods.js'
 import type { AuthUser } from '../../common/types/auth-user.js'
 import { formatBs, formatUsd } from '../../common/utils/money-format.js'
 import { ContentService } from '../../content/content.service.js'
@@ -93,18 +94,21 @@ export class OrderWhatsAppService {
 
         const history = order.history ?? []
         const reason = latestInto(history, order.status)?.note
-        const shippingNote = latestInto(history, 'ENVIADO')?.note
+        const shippingNote = latestInto(history, 'DESPACHADO')?.note
         const values: WhatsAppValues = {
             nombre: firstName(order.customerName),
             pedido: order.code,
             enlace: link?.url ?? '',
-            total: `${formatUsd(order.totalUsd)} (${formatBs(order.totalBs)})`,
+            total: paysInBolivars(order.paymentMethod)
+                ? `${formatUsd(order.totalUsd)} (${formatBs(order.totalBs)})`
+                : formatUsd(order.totalUsd),
+            metodo: PAYMENT_METHOD_LABELS[order.paymentMethod],
             motivo: reason ? withoutFinalPunctuation(reason) : '',
             marca: content.general.brandName,
             envio: shippingNote
                 ? withoutFinalPunctuation(shippingNote)
                 : order.deliveryMethod === 'pickup'
-                  ? 'retiro en el taller'
+                  ? 'retiro en tienda'
                   : `a domicilio, ${[order.address, order.city].filter(Boolean).join(', ')}`,
             comprobante: receiptUrl ?? '',
         }

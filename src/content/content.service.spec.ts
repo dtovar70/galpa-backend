@@ -9,7 +9,12 @@ import {
 import type { AuthUser } from '../common/types/auth-user.js'
 import { DEFAULT_SITE_CONTENT } from './content.defaults.js'
 import { ContentService, mergeSection } from './content.service.js'
-import { CONTENT_SECTIONS } from './content.types.js'
+import {
+    configuredMethods,
+    CONTENT_SECTIONS,
+    isMethodConfigured,
+    type PaymentContent,
+} from './content.types.js'
 import type { SiteContentEntry } from './entities/site-content.entity.js'
 
 const USER: AuthUser = {
@@ -57,6 +62,22 @@ function setup(rows: Partial<SiteContentEntry>[] = []) {
     return { service, entries, banks, mobilePrefixes }
 }
 
+/** A payment section with only Pago Móvil filled in. */
+function pagoMovil(fields: Partial<PaymentContent['pagoMovil']> = {}): PaymentContent {
+    return {
+        ...structuredClone(DEFAULT_SITE_CONTENT.payment),
+        pagoMovil: {
+            enabled: true,
+            bankCode: '0102',
+            bankName: 'Banco de Venezuela',
+            phone: '0412-5550134',
+            idNumber: 'J-123456789',
+            holderName: 'Corporación Galpa 2022 C.A.',
+            ...fields,
+        },
+    }
+}
+
 /** The validation error details of a rejected update. */
 async function detailsOf(
     promise: Promise<unknown>,
@@ -85,14 +106,24 @@ describe('mergeSection', () => {
         expect(merged).toEqual({ ...DEFAULT_SITE_CONTENT.shipping, flatRate: 6 })
     })
 
+    it('merges the nested payment methods field by field', () => {
+        const merged = mergeSection('payment', {
+            instructions: 'Hola',
+            zelle: { enabled: true, email: 'pagos@galpa.com.ve' },
+        })
+        expect(merged.instructions).toBe('Hola')
+        expect(merged.zelle).toEqual({ enabled: true, email: 'pagos@galpa.com.ve', holderName: '' })
+        expect(merged.pagoMovil).toEqual(DEFAULT_SITE_CONTENT.payment.pagoMovil)
+    })
+
     it('gives a home row saved before testimonials existed an empty list', () => {
         const { testimonials: _testimonials, ...stored } = {
             ...DEFAULT_SITE_CONTENT.home,
-            heroBadge: 'Hecho a mano',
+            heroBadge: 'Desde 1996',
         }
         const merged = mergeSection('home', stored)
         expect(merged.testimonials).toEqual([])
-        expect(merged.heroBadge).toBe('Hecho a mano')
+        expect(merged.heroBadge).toBe('Desde 1996')
     })
 })
 
@@ -111,24 +142,21 @@ describe('ContentService', () => {
         await expect(service.reset('banner')).rejects.toThrow(NotFoundException)
     })
 
-    it('every default section except Pago Móvil (empty until filled) passes its own DTO', async () => {
+    it('every default section passes its own DTO (payment methods start disabled)', async () => {
         const { service } = setup()
         for (const section of CONTENT_SECTIONS) {
-            const save = service.update(
-                section,
-                structuredClone(DEFAULT_SITE_CONTENT[section]),
-                USER,
-            )
-            if (section === 'payment') await expect(save).rejects.toThrow(BadRequestException)
-            else await expect(save).resolves.toMatchObject({ section })
+            await expect(
+                service.update(section, structuredClone(DEFAULT_SITE_CONTENT[section]), USER),
+            ).resolves.toMatchObject({ section })
         }
+        expect(configuredMethods(DEFAULT_SITE_CONTENT.payment)).toEqual([])
     })
 
     it('stores the trimmed section as JSON with the author', async () => {
         const { service, entries } = setup()
         await service.update(
             'shipping',
-            { ...DEFAULT_SITE_CONTENT.shipping, productionCopy: '  Listo en 2 días  ' },
+            { ...DEFAULT_SITE_CONTENT.shipping, dispatchCopy: '  Despachamos en 24 horas  ' },
             USER,
         )
         const [sql, params] = entries.query.mock.calls[0] as [string, unknown[]]
@@ -136,7 +164,7 @@ describe('ContentService', () => {
         expect(params[0]).toBe('shipping')
         expect(JSON.parse(params[1] as string)).toEqual({
             ...DEFAULT_SITE_CONTENT.shipping,
-            productionCopy: 'Listo en 2 días',
+            dispatchCopy: 'Despachamos en 24 horas',
         })
         expect(params[2]).toBe(USER.id)
     })
@@ -146,31 +174,29 @@ describe('ContentService', () => {
         const details = await detailsOf(
             service.update(
                 'payment',
-                {
+                pagoMovil({
                     bankCode: '102',
-                    bankName: 'Banco de Venezuela',
                     phone: '0212-1234567',
                     idNumber: 'V12345678',
                     holderName: '',
-                    instructions: '',
-                },
+                }),
                 USER,
             ),
         )
         expect(details).toEqual([
             {
-                field: 'bankCode',
+                field: 'pagoMovil.bankCode',
                 errors: ['El código del banco debe tener el formato 0102 (4 dígitos).'],
             },
             {
-                field: 'phone',
+                field: 'pagoMovil.phone',
                 errors: ['El teléfono de Pago Móvil debe tener el formato 0412-5550134.'],
             },
             {
-                field: 'idNumber',
+                field: 'pagoMovil.idNumber',
                 errors: ['Usa V, J o G seguido de 6 a 9 números, por ejemplo V-12345678.'],
             },
-            { field: 'holderName', errors: ['El titular es obligatorio.'] },
+            { field: 'pagoMovil.holderName', errors: ['El titular es obligatorio.'] },
         ])
 
         const shipping = await detailsOf(
@@ -191,30 +217,14 @@ describe('ContentService', () => {
 
     it('accepts cédulas and RIFs', async () => {
         const { service } = setup()
-        const payment = {
-            bankCode: '0102',
-            bankName: 'Banco de Venezuela',
-            phone: '0412-5550134',
-            idNumber: 'J-123456789',
-            holderName: 'Manada Russo C.A.',
-            instructions: '',
-        }
-        await expect(service.update('payment', payment, USER)).resolves.toBeDefined()
+        await expect(service.update('payment', pagoMovil(), USER)).resolves.toBeDefined()
         await expect(
-            service.update('payment', { ...payment, idNumber: 'V-12345678' }, USER),
+            service.update('payment', pagoMovil({ idNumber: 'V-12345678' }), USER),
         ).resolves.toBeDefined()
     })
 
     it('accepts only V, J or G followed by 6 to 9 digits', async () => {
         const { service } = setup()
-        const payment = {
-            bankCode: '0102',
-            bankName: 'Banco de Venezuela',
-            phone: '0412-5550134',
-            idNumber: 'V-12345678',
-            holderName: 'Manada Russo',
-            instructions: '',
-        }
         for (const idNumber of [
             'E-12345678',
             'P-1234567',
@@ -223,34 +233,81 @@ describe('ContentService', () => {
             'v-1234567',
         ]) {
             expect(
-                await detailsOf(service.update('payment', { ...payment, idNumber }, USER)),
+                await detailsOf(service.update('payment', pagoMovil({ idNumber }), USER)),
             ).toEqual([
                 {
-                    field: 'idNumber',
+                    field: 'pagoMovil.idNumber',
                     errors: ['Usa V, J o G seguido de 6 a 9 números, por ejemplo V-12345678.'],
                 },
             ])
         }
         for (const idNumber of ['V-123456', 'G-20000001', 'J-123456789']) {
             await expect(
-                service.update('payment', { ...payment, idNumber }, USER),
+                service.update('payment', pagoMovil({ idNumber }), USER),
             ).resolves.toBeDefined()
         }
     })
 
+    it('requires the details of an enabled method and checks filled ones of a disabled one', async () => {
+        const { service } = setup()
+        const payment = structuredClone(DEFAULT_SITE_CONTENT.payment)
+        payment.zelle = { enabled: true, email: '', holderName: '' }
+        payment.binance = { enabled: false, payId: 'no valido!', email: '', holderName: '' }
+        payment.transfer = { ...payment.transfer, enabled: true, accountNumber: '0102123' }
+        const fields = (await detailsOf(service.update('payment', payment, USER))).map(
+            (detail) => detail.field,
+        )
+        expect(fields).toEqual([
+            'transfer.bankCode',
+            'transfer.accountNumber',
+            'transfer.idNumber',
+            'transfer.holderName',
+            'zelle.email',
+            'zelle.holderName',
+            'binance.payId',
+        ])
+    })
+
+    it('stores a full multi-method section; only complete enabled methods are offered', async () => {
+        const { service, entries } = setup()
+        const payment: PaymentContent = {
+            ...pagoMovil(),
+            transfer: {
+                enabled: true,
+                bankCode: '0102',
+                bankName: '',
+                accountNumber: '01020123450000012345',
+                accountType: 'AHORRO',
+                idNumber: 'J-123456789',
+                holderName: 'Corporación Galpa 2022 C.A.',
+            },
+            zelle: { enabled: true, email: 'pagos@galpa.com.ve', holderName: 'Galpa LLC' },
+            binance: { enabled: false, payId: '123456789', email: '', holderName: '' },
+        }
+        await service.update('payment', payment, USER)
+        const [, params] = entries.query.mock.calls[0] as [string, unknown[]]
+        const stored = JSON.parse(params[1] as string) as PaymentContent
+        expect(stored.transfer.bankName).toBe('Banco de Venezuela')
+        expect(configuredMethods(stored)).toEqual(['PAGO_MOVIL', 'TRANSFERENCIA', 'ZELLE'])
+        expect(isMethodConfigured(stored, 'BINANCE')).toBe(false)
+        expect(
+            isMethodConfigured({ ...stored, zelle: { ...stored.zelle, email: ' ' } }, 'ZELLE'),
+        ).toBe(false)
+    })
+
     it('refuses a Pago Móvil phone or a WhatsApp on an inactive operator code', async () => {
         const { service, entries } = setup()
-        const payment = {
-            bankCode: '0104',
-            bankName: 'Banco',
-            phone: '0426-1234567',
-            idNumber: 'V-12345678',
-            holderName: 'Manada Russo',
-            instructions: '',
-        }
-        expect(await detailsOf(service.update('payment', payment, USER))).toEqual([
-            { field: 'bankCode', errors: ['Elige un banco de la lista.'] },
-            { field: 'phone', errors: ['El código 0426 no está disponible.'] },
+        expect(
+            await detailsOf(
+                service.update(
+                    'payment',
+                    pagoMovil({ bankCode: '0104', phone: '0426-1234567' }),
+                    USER,
+                ),
+            ),
+        ).toEqual([
+            { field: 'pagoMovil.bankCode', errors: ['Elige un banco de la lista.'] },
+            { field: 'pagoMovil.phone', errors: ['El código 0426 no está disponible.'] },
         ])
         expect(
             await detailsOf(
@@ -274,25 +331,17 @@ describe('ContentService', () => {
 
     it('takes the Pago Móvil bank from the active banks of the catalog', async () => {
         const { service, entries, banks } = setup()
-        const payment = {
-            bankCode: '0102',
-            bankName: 'Otro nombre',
-            phone: '0412-5550134',
-            idNumber: 'V-12345678',
-            holderName: 'Manada Russo',
-            instructions: '',
-        }
-        await service.update('payment', payment, USER)
+        await service.update('payment', pagoMovil({ bankName: 'Otro nombre' }), USER)
         const [, params] = entries.query.mock.calls[0] as [string, unknown[]]
-        expect(JSON.parse(params[1] as string)).toMatchObject({
+        expect((JSON.parse(params[1] as string) as PaymentContent).pagoMovil).toMatchObject({
             bankCode: '0102',
             bankName: 'Banco de Venezuela',
         })
 
         entries.query.mockClear()
         expect(
-            await detailsOf(service.update('payment', { ...payment, bankCode: '0104' }, USER)),
-        ).toEqual([{ field: 'bankCode', errors: ['Elige un banco de la lista.'] }])
+            await detailsOf(service.update('payment', pagoMovil({ bankCode: '0104' }), USER)),
+        ).toEqual([{ field: 'pagoMovil.bankCode', errors: ['Elige un banco de la lista.'] }])
         expect(banks.findActive).toHaveBeenLastCalledWith('0104')
         expect(entries.query).not.toHaveBeenCalled()
     })
@@ -333,8 +382,8 @@ describe('ContentService', () => {
             {
                 ...DEFAULT_SITE_CONTENT.home,
                 testimonials: [
-                    { quote: '  Me encantó mi taza  ', name: 'Ana', city: 'Valencia', product: '' },
-                    { quote: 'Llegó rapidísimo', name: ' Luis ', city: '', product: 'Franela' },
+                    { quote: '  Excelente asesoría  ', name: 'Ana', city: 'Valencia', product: '' },
+                    { quote: 'Llegó rapidísimo', name: ' Luis ', city: '', product: 'Split 12k' },
                 ],
             },
             USER,
@@ -342,8 +391,8 @@ describe('ContentService', () => {
         const [, params] = entries.query.mock.calls[0] as [string, unknown[]]
         expect((JSON.parse(params[1] as string) as { testimonials: unknown }).testimonials).toEqual(
             [
-                { quote: 'Me encantó mi taza', name: 'Ana', city: 'Valencia', product: '' },
-                { quote: 'Llegó rapidísimo', name: 'Luis', city: '', product: 'Franela' },
+                { quote: 'Excelente asesoría', name: 'Ana', city: 'Valencia', product: '' },
+                { quote: 'Llegó rapidísimo', name: 'Luis', city: '', product: 'Split 12k' },
             ],
         )
     })
@@ -413,7 +462,7 @@ describe('ContentService', () => {
 
         const home = {
             ...DEFAULT_SITE_CONTENT.home,
-            heroTitle: 'Tazas *que hablan por ti',
+            heroTitle: 'El clima *ideal para tu hogar',
             heroBadge: 'Hola {marca}',
         }
         expect(await detailsOf(service.update('home', home, USER))).toEqual([
@@ -453,7 +502,7 @@ describe('ContentService', () => {
                 {
                     ...DEFAULT_SITE_CONTENT.contact,
                     phone: '+58 412 555 0134',
-                    instagram: '@manada',
+                    instagram: '@galpa',
                 },
                 USER,
             ),

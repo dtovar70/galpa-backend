@@ -16,6 +16,6 @@ export class ShippingContentDto implements ShippingContent {
     })
     freeShippingCopy: string
 
-    @ContentText(masculine('El tiempo de producción'), { max: MAX.announcement })
-    productionCopy: string
+    @ContentText(masculine('El tiempo de despacho'), { max: MAX.announcement })
+    dispatchCopy: string
 }

@@ -25,7 +25,7 @@ function setup() {
         query: vi.fn((sql: string) =>
             Promise.resolve(
                 sql.includes('"site_content"')
-                    ? [{ key: 'payment', value: { phone: '0424-1234567' } }]
+                    ? [{ key: 'payment', value: { pagoMovil: { phone: '0424-1234567' } } }]
                     : [{ code: '0412', count: '2' }],
             ),
         ),

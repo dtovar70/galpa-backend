@@ -37,12 +37,12 @@ describe('Cart availability (e2e)', () => {
     })
 
     it('returns the live stock of each line, in request order, without a session', async () => {
-        db.setVariantStock('v-15oz', 1)
+        db.setVariantStock('v-220v', 1)
         const response = await check({
             items: [
-                { productId: 'mug-001', variantId: 'v-15oz' },
-                { productId: 'key-001' },
-                { productId: 'mug-001', variantId: 'v-11oz' },
+                { productId: 'split-001', variantId: 'v-220v' },
+                { productId: 'remote-001' },
+                { productId: 'split-001', variantId: 'v-110v' },
             ],
         }).expect(200)
 
@@ -50,17 +50,26 @@ describe('Cart availability (e2e)', () => {
         expect(response.body).toEqual({
             items: [
                 {
-                    productId: 'mug-001',
-                    variantId: 'v-15oz',
+                    productId: 'split-001',
+                    variantId: 'v-220v',
                     stock: 1,
+                    stockMode: 'STOCK',
                     isActive: true,
                     exists: true,
                 },
-                { productId: 'key-001', variantId: null, stock: 3, isActive: true, exists: true },
                 {
-                    productId: 'mug-001',
-                    variantId: 'v-11oz',
+                    productId: 'remote-001',
+                    variantId: null,
                     stock: 3,
+                    stockMode: 'STOCK',
+                    isActive: true,
+                    exists: true,
+                },
+                {
+                    productId: 'split-001',
+                    variantId: 'v-110v',
+                    stock: 3,
+                    stockMode: 'STOCK',
                     isActive: true,
                     exists: true,
                 },
@@ -72,24 +81,60 @@ describe('Cart availability (e2e)', () => {
         const { body } = await check({
             items: [
                 { productId: 'off-001' },
-                { productId: 'gone-001', variantId: 'v-15oz' },
-                { productId: 'tee-001', variantId: 'v-15oz' },
-                { productId: 'mug-001', variantId: '' },
+                { productId: 'gone-001', variantId: 'v-220v' },
+                { productId: 'cap-001', variantId: 'v-220v' },
+                { productId: 'split-001', variantId: '' },
             ],
         }).expect(200)
 
         expect(body.items).toEqual([
-            { productId: 'off-001', variantId: null, stock: 9, isActive: false, exists: true },
+            {
+                productId: 'off-001',
+                variantId: null,
+                stock: 9,
+                stockMode: 'STOCK',
+                isActive: false,
+                exists: true,
+            },
             {
                 productId: 'gone-001',
-                variantId: 'v-15oz',
+                variantId: 'v-220v',
                 stock: 0,
+                stockMode: 'STOCK',
                 isActive: false,
                 exists: false,
             },
-            { productId: 'tee-001', variantId: 'v-15oz', stock: 0, isActive: true, exists: false },
+            {
+                productId: 'cap-001',
+                variantId: 'v-220v',
+                stock: 0,
+                stockMode: 'STOCK',
+                isActive: true,
+                exists: false,
+            },
             // A product with variants needs one (the checkout refuses the line otherwise).
-            { productId: 'mug-001', variantId: null, stock: 0, isActive: true, exists: false },
+            {
+                productId: 'split-001',
+                variantId: null,
+                stock: 0,
+                stockMode: 'STOCK',
+                isActive: true,
+                exists: false,
+            },
+        ])
+    })
+
+    it('reports ON_ORDER products as always available', async () => {
+        const { body } = await check({ items: [{ productId: 'cassette-001' }] }).expect(200)
+        expect(body.items).toEqual([
+            {
+                productId: 'cassette-001',
+                variantId: null,
+                stock: 99,
+                stockMode: 'ON_ORDER',
+                isActive: true,
+                exists: true,
+            },
         ])
     })
 
@@ -100,7 +145,7 @@ describe('Cart availability (e2e)', () => {
         ])
 
         const tooMany = Array.from({ length: AVAILABILITY_MAX_ITEMS + 1 }, () => ({
-            productId: 'mug-001',
+            productId: 'split-001',
         }))
         const capped = await check({ items: tooMany }).expect(400)
         expect(capped.body.details[0]).toEqual({

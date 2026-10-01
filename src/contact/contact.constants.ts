@@ -2,17 +2,26 @@ import { masculine } from '../common/validation/messages.js'
 import { TEXT_INPUT_MAX_LENGTH } from '../common/validation/text-limits.js'
 
 /**
- * Topics of the contact form, with the labels the storefront shows. Mirrored by
- * frontend-cups/src/views/contact/schema/contact.schema.ts.
+ * Topics of the contact / advisory form, with the labels the storefront shows. Mirrored by
+ * frontend-galpa/src/views/contact/schema/contact.schema.ts.
  */
-export const CONTACT_TOPICS = ['personalizado', 'mayoreo', 'pedido', 'otro'] as const
+export const CONTACT_TOPICS = ['ASESORIA', 'COTIZACION', 'SOPORTE', 'OTRO'] as const
 export type ContactTopic = (typeof CONTACT_TOPICS)[number]
 
 export const CONTACT_TOPIC_LABELS: Record<ContactTopic, string> = {
-    personalizado: 'Quiero un diseño personalizado',
-    mayoreo: 'Pedido por mayor',
-    pedido: 'Consulta sobre un pedido',
-    otro: 'Otro tema',
+    ASESORIA: 'Asesoría para elegir un equipo',
+    COTIZACION: 'Solicitud de cotización',
+    SOPORTE: 'Soporte o garantía',
+    OTRO: 'Otro tema',
+}
+
+/** The kind of space to climatize (advisory requests). */
+export const SPACE_TYPES = ['RESIDENCIAL', 'COMERCIAL'] as const
+export type SpaceType = (typeof SPACE_TYPES)[number]
+
+export const SPACE_TYPE_LABELS: Record<SpaceType, string> = {
+    RESIDENCIAL: 'Residencial',
+    COMERCIAL: 'Comercial',
 }
 
 export const CONTACT_LIMITS = {
@@ -20,6 +29,9 @@ export const CONTACT_LIMITS = {
     email: TEXT_INPUT_MAX_LENGTH,
     /** A textarea: its own, larger limit (the storefront stops at the same length). */
     message: { min: 15, max: 600 },
+    /** Square meters of the space. */
+    areaM2: { min: 1, max: 5000 },
+    productSlug: 80,
     /** The hidden honeypot input; anything longer is not a person either. */
     website: 200,
 } as const
@@ -30,6 +42,9 @@ export const CONTACT_FIELD = {
     email: masculine('El correo'),
     phone: masculine('El WhatsApp'),
     topic: masculine('El tema'),
+    spaceType: masculine('El tipo de espacio'),
+    areaM2: masculine('El área en metros cuadrados'),
+    productSlug: masculine('El producto'),
     message: masculine('El mensaje'),
     website: masculine('El sitio web'),
 } as const

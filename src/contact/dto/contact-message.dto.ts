@@ -1,5 +1,18 @@
-import { Transform, type TransformFnParams } from 'class-transformer'
-import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator'
+import { Transform, Type, type TransformFnParams } from 'class-transformer'
+import {
+    IsEmail,
+    IsIn,
+    IsInt,
+    IsOptional,
+    IsString,
+    Matches,
+    Max,
+    MaxLength,
+    Min,
+    MinLength,
+    ValidateIf,
+} from 'class-validator'
+import { SLUG_PATTERN } from '../../common/utils/text.util.js'
 import { msg } from '../../common/validation/messages.js'
 import { MaxInputLength } from '../../common/validation/text-limits.js'
 import { VE_MOBILE_PATTERN } from '../../common/validation/ve-formats.js'
@@ -7,7 +20,9 @@ import {
     CONTACT_FIELD as FIELD,
     CONTACT_LIMITS as LIMITS,
     CONTACT_TOPICS,
+    SPACE_TYPES,
     type ContactTopic,
+    type SpaceType,
 } from '../contact.constants.js'
 
 const trim = ({ value }: TransformFnParams): unknown =>
@@ -20,13 +35,29 @@ const trimOrUndefined = ({ value }: TransformFnParams): unknown => {
     return trimmed === '' ? undefined : trimmed
 }
 
-/** Body of `POST /contact`: the storefront's contact form (same rules as its zod schema). */
+/** Validates the customer's name, sent as `name` (or as `fullName`, the older field). */
+const NameRules = (): PropertyDecorator[] => [
+    Transform(trim),
+    IsString({ message: msg.text(FIELD.fullName) }),
+    MinLength(LIMITS.fullName.min, { message: 'Escribe tu nombre y apellido.' }),
+    MaxLength(LIMITS.fullName.max, { message: msg.maxLength(FIELD.fullName, LIMITS.fullName.max) }),
+]
+
+function applyAll(decorators: PropertyDecorator[]): PropertyDecorator {
+    return (target, property) => decorators.forEach((decorator) => decorator(target, property))
+}
+
+/** Body of `POST /contact`: the storefront's contact / advisory form. */
 export class ContactMessageDto {
-    @Transform(trim)
-    @IsString({ message: msg.text(FIELD.fullName) })
-    @MinLength(LIMITS.fullName.min, { message: 'Escribe tu nombre y apellido.' })
-    @MaxLength(LIMITS.fullName.max, { message: msg.maxLength(FIELD.fullName, LIMITS.fullName.max) })
-    fullName: string
+    /** Required unless `fullName` is sent instead. */
+    @ValidateIf((dto: ContactMessageDto) => dto.fullName === undefined || dto.name !== undefined)
+    @applyAll(NameRules())
+    name?: string
+
+    /** The same as `name` (accepted for older storefront builds). */
+    @IsOptional()
+    @applyAll(NameRules())
+    fullName?: string
 
     @Transform(trim)
     @IsString({ message: msg.text(FIELD.email) })
@@ -46,6 +77,26 @@ export class ContactMessageDto {
 
     @IsIn(CONTACT_TOPICS, { message: msg.invalid(FIELD.topic) })
     topic: ContactTopic
+
+    @IsOptional()
+    @IsIn(SPACE_TYPES, { message: msg.invalid(FIELD.spaceType) })
+    spaceType?: SpaceType
+
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt({ message: msg.integer(FIELD.areaM2) })
+    @Min(LIMITS.areaM2.min, { message: msg.min(FIELD.areaM2, LIMITS.areaM2.min) })
+    @Max(LIMITS.areaM2.max, { message: msg.max(FIELD.areaM2, LIMITS.areaM2.max) })
+    areaM2?: number
+
+    /** The product page the customer wrote from; unknown slugs are ignored. */
+    @IsOptional()
+    @Transform(trimOrUndefined)
+    @MaxLength(LIMITS.productSlug, {
+        message: msg.maxLength(FIELD.productSlug, LIMITS.productSlug),
+    })
+    @Matches(SLUG_PATTERN, { message: msg.invalid(FIELD.productSlug) })
+    productSlug?: string
 
     @Transform(trim)
     @IsString({ message: msg.text(FIELD.message) })

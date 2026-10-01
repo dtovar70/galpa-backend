@@ -1,7 +1,7 @@
 {
-  "name": "backend-cups",
+  "name": "backend-galpa",
   "version": "0.0.1",
-  "description": "Manada Russo Creativa API (NestJS + TypeORM + PostgreSQL)",
+  "description": "Corporación Galpa 2022 C.A. API (NestJS + TypeORM + PostgreSQL)",
   "author": "",
   "private": true,
   "license": "UNLICENSED",

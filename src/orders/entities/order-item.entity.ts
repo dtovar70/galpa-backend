@@ -9,23 +9,22 @@ import {
     type Relation,
 } from 'typeorm'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
-import { Design } from '../../designs/entities/design.entity.js'
 import { Product } from '../../products/entities/product.entity.js'
-import { ORDER_LIMITS } from '../dto/field-names.js'
+import { STOCK_MODES, type StockMode } from '../../products/products.constants.js'
 import { Order } from './order.entity.js'
 
 /**
- * One ordered line, stored as a snapshot: later product edits (name, price, photos, variants)
- * never change a past order. `product_id` is only kept to restore stock and link the admin to
- * the product; it becomes null if the product is deleted.
+ * One ordered line, stored as a snapshot: later product edits (name, price, photos, variants,
+ * stock mode) never change a past order. `product_id` is only kept to restore stock and link the
+ * admin to the product; it becomes null if the product is deleted. Lines converted from a quote
+ * may have no product at all (a free-text line, e.g. installation).
  */
 @Entity({ name: 'order_items' })
 @Index('order_items_order_id_idx', ['orderId'])
-@Index('order_items_design_id_key', ['designId'], { unique: true })
 @Check('order_items_quantity_check', `"quantity" > 0`)
 @Check(
-    'order_items_personalization_length_check',
-    `char_length("personalization") <= ${ORDER_LIMITS.personalization}`,
+    'order_items_stock_mode_check',
+    `"stock_mode" IN (${STOCK_MODES.map((mode) => `'${mode}'`).join(', ')})`,
 )
 export class OrderItem {
     @PrimaryColumn({ type: 'text', primaryKeyConstraintName: 'order_items_pkey' })
@@ -52,13 +51,27 @@ export class OrderItem {
     @Column({ name: 'product_name', type: 'text' })
     productName: string
 
-    @Column({ name: 'product_slug', type: 'text' })
-    productSlug: string
+    /** Null for a free-text line (no product). */
+    @Column({ name: 'product_slug', type: 'text', nullable: true })
+    productSlug: string | null
+
+    @Column({ type: 'text', nullable: true })
+    brand: string | null
+
+    @Column({ type: 'text', nullable: true })
+    model: string | null
+
+    /**
+     * The product's stock mode when ordered. Only STOCK lines take, reserve and restore stock;
+     * free-text lines are stored as ON_ORDER so they never do.
+     */
+    @Column({ name: 'stock_mode', type: 'text', default: 'STOCK' })
+    stockMode: StockMode
 
     @Column({ name: 'variant_label', type: 'text', nullable: true })
     variantLabel: string | null
 
-    /** First product photo at order time; null for illustrated products. */
+    /** First product photo at order time; null when it had none. */
     @Column({ name: 'image_url', type: 'text', nullable: true })
     imageUrl: string | null
 
@@ -83,21 +96,6 @@ export class OrderItem {
     })
     lineTotalUsd: number
 
-    /** Text the customer asked to print, when the line is personalized. */
-    @Column({ type: 'text', nullable: true })
-    personalization: string | null
-
     @Column({ name: 'sort_order', type: 'integer', default: 0 })
     sortOrder: number
-
-    /**
-     * The customer's own image for this line ("Diseño propio"). One design per line and one line
-     * per design (unique). RESTRICT: an attached design is never cleaned up.
-     */
-    @Column({ name: 'design_id', type: 'text', nullable: true })
-    designId: string | null
-
-    @ManyToOne(() => Design, { onDelete: 'RESTRICT', onUpdate: 'CASCADE', nullable: true })
-    @JoinColumn({ name: 'design_id', foreignKeyConstraintName: 'order_items_design_id_fkey' })
-    design?: Relation<Design> | null
 }

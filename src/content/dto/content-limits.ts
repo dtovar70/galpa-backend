@@ -1,6 +1,6 @@
 /**
  * Lengths, list sizes and formats of the editable content. Mirrored by the admin forms in
- * frontend-cups/src/views/admin/content/schema/content.schema.ts.
+ * frontend-galpa/src/views/admin/content/schema/content.schema.ts.
  */
 export const CONTENT_LIMITS = {
     /** Button labels, badges, eyebrows, short list items. */
@@ -52,5 +52,8 @@ export {
     VE_PHONE_PATTERN,
 } from '../../common/validation/ve-formats.js'
 export const BANK_CODE_PATTERN = /^\d{4}$/
+/** Venezuelan bank account: 20 digits. */
+export const BANK_ACCOUNT_PATTERN = /^\d{20}$/
+export const BINANCE_PAY_ID_PATTERN = /^[A-Za-z0-9]{4,64}$/
 /** Instagram / TikTok handle without "@"; empty hides the link. */
 export const SOCIAL_HANDLE_PATTERN = /^(?:[A-Za-z0-9._]{1,30})?$/

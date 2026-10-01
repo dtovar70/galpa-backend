@@ -23,10 +23,12 @@ function setup() {
     const products = {
         findOneBy: vi.fn().mockResolvedValue({
             id: 'p1',
-            slug: 'franela',
-            name: 'Franela',
+            slug: 'capacitor-dual',
+            name: 'Capacitor dual',
+            brand: 'Packard',
+            model: null,
+            sku: null,
             description: '',
-            printText: '',
             tags: [],
             price: 20,
             compareAtPrice: null,
@@ -61,16 +63,15 @@ describe('AdminProductsService stock', () => {
     it('creates a product whose stock is the sum of its variants', async () => {
         const { service, manager } = setup()
         await service.create({
-            name: 'Franela',
-            categorySlug: 'tees',
+            name: 'Capacitor dual',
+            categorySlug: 'repuestos',
+            brand: 'Packard',
             price: 20,
-            printText: '',
-            colorHex: '#FFFFFF',
             description: '',
             stock: 99,
             variants: [
-                { ...VARIANT, label: 'S', stock: 2 },
-                { ...VARIANT, label: 'M', stock: 3 },
+                { ...VARIANT, label: '35+5 µF', stock: 2 },
+                { ...VARIANT, label: '45+5 µF', stock: 3 },
             ],
         } as CreateProductDto)
 
@@ -80,35 +81,68 @@ describe('AdminProductsService stock', () => {
             ([entity]) => entity === ProductVariant,
         )!
         expect(variants).toMatchObject([
-            { label: 'S', stock: 2, sortOrder: 0 },
-            { label: 'M', stock: 3, sortOrder: 1 },
+            { label: '35+5 µF', stock: 2, sortOrder: 0 },
+            { label: '45+5 µF', stock: 3, sortOrder: 1 },
         ])
     })
 
     it('keeps its own stock for a product without variants', async () => {
         const { service, manager } = setup()
         await service.create({
-            name: 'Llavero',
-            categorySlug: 'keychains',
-            price: 4,
-            printText: '',
-            colorHex: '#FFFFFF',
+            name: 'Control remoto universal',
+            categorySlug: 'repuestos',
+            brand: 'Chunghop',
+            price: 12,
             description: '',
             stock: 7,
         } as CreateProductDto)
         const [, product] = manager.insert.mock.calls.find(([entity]) => entity === Product)!
-        expect(product).toMatchObject({ stock: 7 })
+        expect(product).toMatchObject({ stock: 7, stockMode: 'STOCK', specs: [] })
+    })
+
+    it('stores the air conditioner fields, the ficha técnica and a searchable brand and SKU', async () => {
+        const { service, manager } = setup()
+        await service.create({
+            name: 'Split Inverter 12.000 BTU',
+            categorySlug: 'aires-residenciales',
+            brand: 'LG',
+            model: 'S4-Q12JA',
+            sku: 'LG-S4Q12',
+            stockMode: 'ON_ORDER',
+            leadTimeDays: 20,
+            btu: 12000,
+            voltage: '220V',
+            isInverter: true,
+            refrigerant: 'R32',
+            specs: [{ label: 'Capacidad', value: '12.000 BTU' }],
+            price: 640,
+            description: '',
+        } as CreateProductDto)
+        const [, product] = manager.insert.mock.calls.find(([entity]) => entity === Product)!
+        expect(product).toMatchObject({
+            brand: 'LG',
+            model: 'S4-Q12JA',
+            sku: 'LG-S4Q12',
+            stockMode: 'ON_ORDER',
+            leadTimeDays: 20,
+            btu: 12000,
+            voltage: '220V',
+            isInverter: true,
+            refrigerant: 'R32',
+            specs: [{ label: 'Capacidad', value: '12.000 BTU' }],
+        })
+        expect((product as { searchText: string }).searchText).toContain('lg s4-q12ja lg-s4q12')
     })
 
     it('keeps the ids of the variants that stay, removes the rest and syncs the total', async () => {
         const { service, manager } = setup()
         await service.update('p1', {
             variants: [
-                { ...VARIANT, id: 'v-m', label: 'M', stock: 4 },
-                { ...VARIANT, label: 'XL', stock: 1 },
+                { ...VARIANT, id: 'v-m', label: '110V', stock: 4 },
+                { ...VARIANT, label: '220V', stock: 1 },
                 // Not a variant of this product (or repeated): gets a new id.
-                { ...VARIANT, id: 'other-product', label: 'XS', stock: 0 },
-                { ...VARIANT, id: 'v-m', label: 'M bis', stock: 0 },
+                { ...VARIANT, id: 'other-product', label: '208-230V', stock: 0 },
+                { ...VARIANT, id: 'v-m', label: '110V bis', stock: 0 },
             ],
         })
 
@@ -121,7 +155,7 @@ describe('AdminProductsService stock', () => {
         ]
         expect(entity).toBe(ProductVariant)
         expect(conflict).toEqual(['id'])
-        expect(rows[0]).toMatchObject({ id: 'v-m', label: 'M', stock: 4, sortOrder: 0 })
+        expect(rows[0]).toMatchObject({ id: 'v-m', label: '110V', stock: 4, sortOrder: 0 })
         expect(rows.slice(1).map((row) => row.id)).not.toContain('v-m')
         expect(rows.slice(1).map((row) => row.id)).not.toContain('other-product')
 

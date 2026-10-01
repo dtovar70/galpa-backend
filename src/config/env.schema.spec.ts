@@ -67,8 +67,8 @@ describe('envSchema (public site URL)', () => {
     it('defaults to the Vite dev server and drops trailing slashes', () => {
         expect(validateEnv(BASE).PUBLIC_SITE_URL).toBe('http://localhost:5173')
         expect(
-            validateEnv({ ...BASE, PUBLIC_SITE_URL: 'https://manadarusso.com/' }).PUBLIC_SITE_URL,
-        ).toBe('https://manadarusso.com')
+            validateEnv({ ...BASE, PUBLIC_SITE_URL: 'https://galpa.com.ve/' }).PUBLIC_SITE_URL,
+        ).toBe('https://galpa.com.ve')
         expect(envSchema.safeParse({ ...BASE, PUBLIC_SITE_URL: 'not a url' }).success).toBe(false)
     })
 })
@@ -120,7 +120,7 @@ describe('envSchema (mail)', () => {
         const env = validateEnv({
             ...BASE,
             MAIL_DRIVER: 'smtp',
-            MAIL_FROM: 'Manada Russo Creativa <pedidos@manadarusso.test>',
+            MAIL_FROM: 'Corporación Galpa 2022 C.A. <pedidos@galpa.test>',
             SMTP_HOST: 'localhost',
             SMTP_PORT: '1025',
             SMTP_USER: '',
@@ -188,21 +188,21 @@ describe('envSchema (production)', () => {
     const PRODUCTION = {
         ...BASE,
         NODE_ENV: 'production',
-        PUBLIC_API_URL: 'https://api.manadarusso.com',
-        PUBLIC_SITE_URL: 'https://manadarusso.com',
-        CORS_ORIGIN: 'https://manadarusso.com,https://www.manadarusso.com',
-        CLOUDINARY_CLOUD_NAME: 'manada',
+        PUBLIC_API_URL: 'https://api.galpa.com.ve',
+        PUBLIC_SITE_URL: 'https://galpa.com.ve',
+        CORS_ORIGIN: 'https://galpa.com.ve,https://www.galpa.com.ve',
+        CLOUDINARY_CLOUD_NAME: 'galpa',
         CLOUDINARY_API_KEY: '123',
         CLOUDINARY_API_SECRET: 'secret',
         MAIL_DRIVER: 'resend',
-        MAIL_FROM: 'Manada Russo Creativa <pedidos@manadarusso.com>',
+        MAIL_FROM: 'Corporación Galpa 2022 C.A. <pedidos@galpa.com.ve>',
         RESEND_API_KEY: 're_123',
     }
 
     it('accepts a complete production configuration', () => {
         const env = validateEnv(PRODUCTION)
         expect(env.NODE_ENV).toBe('production')
-        expect(env.CORS_ORIGIN).toEqual(['https://manadarusso.com', 'https://www.manadarusso.com'])
+        expect(env.CORS_ORIGIN).toEqual(['https://galpa.com.ve', 'https://www.galpa.com.ve'])
     })
 
     it('refuses the development defaults, listing everything that is missing', () => {
@@ -227,7 +227,7 @@ describe('envSchema (production)', () => {
 
     it('requires https and a public host for the public URLs', () => {
         expect(() =>
-            validateEnv({ ...PRODUCTION, PUBLIC_API_URL: 'http://api.manadarusso.com' }),
+            validateEnv({ ...PRODUCTION, PUBLIC_API_URL: 'http://api.galpa.com.ve' }),
         ).toThrow(/PUBLIC_API_URL: \[production\]/)
         expect(() =>
             validateEnv({ ...PRODUCTION, PUBLIC_SITE_URL: 'https://127.0.0.1:5173' }),
@@ -238,7 +238,7 @@ describe('envSchema (production)', () => {
         expect(() =>
             validateEnv({
                 ...PRODUCTION,
-                CORS_ORIGIN: 'https://manadarusso.com,http://localhost:5173',
+                CORS_ORIGIN: 'https://galpa.com.ve,http://localhost:5173',
             }),
         ).toThrow(/CORS_ORIGIN: \[production\].*http:\/\/localhost:5173/)
     })

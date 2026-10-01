@@ -27,7 +27,8 @@ export const MOBILE_PREFIX_CACHE_MS = 60_000
 
 /**
  * Content fields checked against this catalog; "in use" when their value starts with the code.
- * The contact "Teléfono" also takes landlines and is not checked, so it never blocks a delete.
+ * `payment.phone` is the Pago Móvil phone (`payment.pagoMovil.phone`). The contact "Teléfono"
+ * also takes landlines and is not checked, so it never blocks a delete.
  */
 export const CONTENT_PHONE_FIELDS = ['payment.phone', 'contact.whatsapp'] as const
 export type ContentPhoneField = (typeof CONTENT_PHONE_FIELDS)[number]
@@ -37,12 +38,12 @@ const CONTENT_FIELD_REASONS: Record<ContentPhoneField, string> = {
     'contact.whatsapp': 'es el WhatsApp de contacto',
 }
 
-/** Matches `MobilePrefix` in frontend-cups/src/@types/catalog.ts. */
+/** Matches `MobilePrefix` in frontend-galpa/src/@types/catalog.ts. */
 export interface MobilePrefixDto {
     code: string
 }
 
-/** Matches `AdminMobilePrefix` in frontend-cups/src/@types/catalog.ts. */
+/** Matches `AdminMobilePrefix` in frontend-galpa/src/@types/catalog.ts. */
 export interface AdminMobilePrefixDto extends MobilePrefixDto {
     isActive: boolean
     sortOrder: number
@@ -257,14 +258,16 @@ export class MobilePrefixesService {
  */
 function contentPhones(rows: { key: string; value: unknown }[]): Record<ContentPhoneField, string> {
     const stored = new Map(rows.map((row) => [row.key, row.value]))
-    const pick = (section: 'payment' | 'contact', field: string): string => {
-        const value = (stored.get(section) as Record<string, unknown> | undefined)?.[field]
-        const fallback = (DEFAULT_SITE_CONTENT[section] as unknown as Record<string, string>)[field]
-        return typeof value === 'string' ? value : (fallback ?? '')
-    }
+    const pick = (stored: unknown, fallback: string): string =>
+        typeof stored === 'string' ? stored : fallback
+    const payment = stored.get('payment') as { pagoMovil?: Record<string, unknown> } | undefined
+    const contact = stored.get('contact') as Record<string, unknown> | undefined
     return {
-        'payment.phone': pick('payment', 'phone'),
-        'contact.whatsapp': pick('contact', 'whatsapp'),
+        'payment.phone': pick(
+            payment?.pagoMovil?.phone,
+            DEFAULT_SITE_CONTENT.payment.pagoMovil.phone,
+        ),
+        'contact.whatsapp': pick(contact?.whatsapp, DEFAULT_SITE_CONTENT.contact.whatsapp),
     }
 }
 

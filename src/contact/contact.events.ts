@@ -1,4 +1,4 @@
-import type { ContactTopic } from './contact.constants.js'
+import type { ContactTopic, SpaceType } from './contact.constants.js'
 
 /**
  * Contact form events. Listeners (the Telegram bot) subscribe with `@OnEvent(...)`, so the
@@ -15,6 +15,10 @@ export interface ContactMessageReceivedEvent {
     /** "0424-1234567", or null when the customer left it empty. */
     phone: string | null
     topic: ContactTopic
+    spaceType: SpaceType | null
+    areaM2: number | null
+    /** The product the customer asked about, when they wrote from its page. */
+    product: { slug: string; name: string; url: string } | null
     message: string
     /** ISO instant. */
     receivedAt: string

@@ -1,11 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { OnEvent } from '@nestjs/event-emitter'
-import { ORDER_EVENTS, type OrderCreatedEvent } from '../orders.events.js'
+import {
+    ORDER_EVENTS,
+    type OrderCreatedEvent,
+    type OrderStatusChangedEvent,
+} from '../orders.events.js'
+import { isStatusEmailStatus } from './order-emails.js'
 import { OrderEmailsService } from './order-emails.service.js'
 
 /**
- * order.created → "Pedido recibido". Runs after the order was committed and never throws: a
- * mail outage can never fail or slow down the checkout. With MAIL_DRIVER=log it does nothing.
+ * Customer emails driven by order events: order.created → "Pedido recibido"; order.status_changed
+ * → one email per status the customer should hear about (payment approved or rejected, goods
+ * on their way, ready for pickup, shipped, delivered, cancelled, expired). They run after the
+ * change was committed and never throw: a mail outage can never fail or slow down an order. With
+ * MAIL_DRIVER=log they do nothing.
  */
 @Injectable()
 export class OrderEmailsListener {
@@ -19,9 +27,23 @@ export class OrderEmailsListener {
         try {
             await this.emails.sendOrderReceived(event.orderId)
         } catch (error) {
+            this.logger.error(`"Order received" email of ${event.code} failed: ${reason(error)}`)
+        }
+    }
+
+    @OnEvent(ORDER_EVENTS.statusChanged, { async: true })
+    async onStatusChanged(event: OrderStatusChangedEvent): Promise<void> {
+        if (!this.emails.enabled || !isStatusEmailStatus(event.to)) return
+        try {
+            await this.emails.sendStatusChanged(event.orderId, event.to, event.note)
+        } catch (error) {
             this.logger.error(
-                `"Order received" email of ${event.code} failed: ${error instanceof Error ? error.message : String(error)}`,
+                `Status email (${event.to}) of ${event.code} failed: ${reason(error)}`,
             )
         }
     }
+}
+
+function reason(error: unknown): string {
+    return error instanceof Error ? error.message : String(error)
 }

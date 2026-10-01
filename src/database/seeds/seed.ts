@@ -1,5 +1,5 @@
 /**
- * Idempotent seed: admin user + categories + catalog copied from the frontend mocks.
+ * Idempotent seed: admin user + categories + demo catalog.
  * Run with `npm run db:seed` (after `npm run db:migrate`).
  */
 import argon2 from 'argon2'
@@ -68,17 +68,9 @@ async function seedCategories(): Promise<void> {
     console.log(`  categories: ${categories.length}`)
 }
 
-/**
- * The seed data keeps one stock per product (copied from the frontend mock): it is shared out
- * evenly across the variants, the first ones taking the remainder, so the sum stays the same.
- */
-function splitStock(total: number, count: number, index: number): number {
-    return Math.floor(total / count) + (index < total % count ? 1 : 0)
-}
-
 async function seedProducts(): Promise<void> {
     for (const product of products) {
-        const { id, category, variants, compareAtPrice, createdAt, ...fields } = product
+        const { id, category, variants, compareAtPrice, createdAt, stock, ...fields } = product
 
         await dataSource.transaction(async (manager) => {
             await manager.upsert(
@@ -88,6 +80,10 @@ async function seedProducts(): Promise<void> {
                     ...fields,
                     categorySlug: category,
                     compareAtPrice: compareAtPrice ?? null,
+                    // With variants the product's stock is their sum.
+                    stock: variants.length
+                        ? variants.reduce((sum, variant) => sum + variant.stock, 0)
+                        : stock,
                     createdAt: new Date(createdAt),
                     ...computeDerivedFields(product),
                 },
@@ -102,8 +98,7 @@ async function seedProducts(): Promise<void> {
                         productId: id,
                         label: variant.label,
                         priceDelta: variant.priceDelta,
-                        colorHex: variant.colorHex ?? null,
-                        stock: splitStock(product.stock, variants.length, sortOrder),
+                        stock: variant.stock,
                         sortOrder,
                     })),
                 )

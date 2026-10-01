@@ -14,9 +14,9 @@ export class ContactController {
     constructor(private readonly contact: ContactService) {}
 
     /**
-     * "Escríbenos": 202 once the message is on its way to the owner's Telegram. 503 (code
-     * `CONTACT_UNAVAILABLE`) when no linked chat can receive it; 429 past 5 per IP or 3 per
-     * email every 15 minutes.
+     * "Escríbenos" / "Pide asesoría": 202 once the message is on its way to the owner's Telegram
+     * and/or the store inbox. 503 (code `CONTACT_UNAVAILABLE`) when neither can receive it; 429
+     * past 5 per IP or 3 per email every 15 minutes.
      */
     @Post()
     @HttpCode(HttpStatus.ACCEPTED)

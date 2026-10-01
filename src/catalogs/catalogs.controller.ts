@@ -127,7 +127,7 @@ export class AdminCatalogsController {
         return this.banks.update(code, dto)
     }
 
-    /** `409` while a payment or the Pago Móvil details use the bank: deactivate it instead. */
+    /** `409` while a payment or the store's payment details use the bank: deactivate it instead. */
     @Delete('banks/:code')
     @HttpCode(HttpStatus.NO_CONTENT)
     removeBank(@Param('code') code: string): Promise<void> {

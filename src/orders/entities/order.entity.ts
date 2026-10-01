@@ -19,6 +19,7 @@ import { User } from '../../auth/entities/user.entity.js'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
 import { ExchangeRate } from '../../exchange-rate/entities/exchange-rate.entity.js'
 import type { RateSource } from '../../exchange-rate/providers/rate-provider.js'
+import { PAYMENT_METHODS, type PaymentMethod } from '../../common/payment-methods.js'
 import type { DeliveryMethod } from '../order-pricing.js'
 import {
     ORDER_STATUSES,
@@ -77,6 +78,11 @@ export interface StockConflict {
     `"status" IN (${ORDER_STATUSES.map((status) => `'${status}'`).join(', ')})`,
 )
 @Check('orders_delivery_method_check', `"delivery_method" IN ('delivery', 'pickup')`)
+@Check(
+    'orders_payment_method_check',
+    `"payment_method" IN (${PAYMENT_METHODS.map((method) => `'${method}'`).join(', ')})`,
+)
+@Check('orders_discount_usd_check', `"discount_usd" >= 0`)
 @Check('orders_notes_length_check', `char_length("notes") <= ${ORDER_LIMITS.notes}`)
 @Check(
     'orders_refund_status_check',
@@ -86,7 +92,7 @@ export class Order {
     @PrimaryColumn({ type: 'text', primaryKeyConstraintName: 'orders_pkey' })
     id: string
 
-    /** Human-friendly and sequential: "MR-000123" (from the `order_code_seq` sequence). */
+    /** Human-friendly and sequential: "GP-000123" (from the `order_code_seq` sequence). */
     @Column({ type: 'text' })
     code: string
 
@@ -115,6 +121,15 @@ export class Order {
     @Column({ name: 'customer_phone', type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     customerPhone: string
 
+    /** Cédula or RIF for the invoice ("V-12345678"); optional. */
+    @Column({
+        name: 'customer_id_number',
+        type: 'varchar',
+        length: TEXT_INPUT_MAX_LENGTH,
+        nullable: true,
+    })
+    customerIdNumber: string | null
+
     @Column({ type: 'varchar', length: TEXT_INPUT_MAX_LENGTH })
     city: string
 
@@ -124,9 +139,21 @@ export class Order {
     @Column({ name: 'delivery_method', type: 'text' })
     deliveryMethod: DeliveryMethod
 
-    /** Customer's notes for the workshop ("" when none). */
+    /** Customer's notes for the store ("" when none). */
     @Column({ type: 'text', default: '' })
     notes: string
+
+    /** Chosen at checkout; the customer may switch it while the order waits for a payment. */
+    @Column({ name: 'payment_method', type: 'text' })
+    paymentMethod: PaymentMethod
+
+    /** Some line is sold "bajo pedido" (the goods are ordered from the supplier after paying). */
+    @Column({ name: 'has_on_order_items', type: 'boolean', default: false })
+    hasOnOrderItems: boolean
+
+    /** The customer asked to be contacted about installation. */
+    @Column({ name: 'wants_installation', type: 'boolean', default: false })
+    wantsInstallation: boolean
 
     @Column({
         name: 'subtotal_usd',
@@ -136,6 +163,16 @@ export class Order {
         transformer: decimalTransformer,
     })
     subtotalUsd: number
+
+    /** Discount granted in a quote (0 for checkout orders). */
+    @Column({
+        name: 'discount_usd',
+        type: 'numeric',
+        precision: 10,
+        scale: 2,
+        transformer: decimalTransformer,
+    })
+    discountUsd: number
 
     @Column({
         name: 'shipping_usd',
@@ -195,7 +232,10 @@ export class Order {
     @Column({ name: 'payment_due_at', type: 'timestamptz', precision: 3 })
     paymentDueAt: Date
 
-    /** Set once the stock was put back (cancelled or expired), so it never happens twice. */
+    /**
+     * Set once the stock was put back (cancelled or expired), so it never happens twice. Only
+     * STOCK-mode lines hold stock.
+     */
     @Column({ name: 'stock_restored', type: 'boolean', default: false })
     stockRestored: boolean
 

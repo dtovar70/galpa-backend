@@ -2,11 +2,15 @@ import { Injectable, Logger } from '@nestjs/common'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import { ContentService } from '../../content/content.service.js'
-import { isPaymentConfigured } from '../../content/content.types.js'
 import { MailService } from '../../mail/mail.service.js'
 import { Order } from '../entities/order.entity.js'
 import { OrderAccessService } from '../order-access.service.js'
-import { orderLinkEmail, orderReceivedEmail } from './order-emails.js'
+import {
+    orderLinkEmail,
+    orderReceivedEmail,
+    orderStatusEmail,
+    type StatusEmailStatus,
+} from './order-emails.js'
 
 /**
  * Customer emails about an order. Each one carries a fresh private link (issued here, never the
@@ -33,7 +37,7 @@ export class OrderEmailsService {
         if (!this.enabled) return false
         const order = await this.dataSource
             .getRepository(Order)
-            .findOne({ where: { id: orderId }, relations: { items: { design: true } } })
+            .findOne({ where: { id: orderId }, relations: { items: true } })
         if (!order) {
             this.logger.warn(`Order ${orderId} not found; no "order received" email`)
             return false
@@ -42,11 +46,44 @@ export class OrderEmailsService {
         const link = await this.access.issue(order.id, order.code, null)
         const email = orderReceivedEmail(
             { ...order, items: order.items ?? [] },
-            isPaymentConfigured(content.payment) ? content.payment : null,
+            content.payment,
             link.url,
             { brandName: content.general.brandName, contact: content.contact },
         )
         return this.mail.send({ to: order.customerEmail, ...email }, `order received ${order.code}`)
+    }
+
+    /** A status change email (see `STATUS_EMAIL_STATUSES`). Resolves false when nothing was sent. */
+    async sendStatusChanged(
+        orderId: string,
+        status: StatusEmailStatus,
+        note: string | null,
+    ): Promise<boolean> {
+        if (!this.enabled) return false
+        const order = await this.dataSource.getRepository(Order).findOne({
+            where: { id: orderId },
+            select: {
+                id: true,
+                code: true,
+                customerName: true,
+                customerEmail: true,
+                hasOnOrderItems: true,
+            },
+        })
+        if (!order) {
+            this.logger.warn(`Order ${orderId} not found; no status email`)
+            return false
+        }
+        const content = await this.content.getAll()
+        const link = await this.access.issue(order.id, order.code, null)
+        const email = orderStatusEmail(order, status, note, link.url, {
+            brandName: content.general.brandName,
+            contact: content.contact,
+        })
+        return this.mail.send(
+            { to: order.customerEmail, ...email },
+            `order status ${status} ${order.code}`,
+        )
     }
 
     /** "Consultar mi pedido": a fresh link to the order's own email. */

@@ -1,31 +1,30 @@
+import {
+    PAYMENT_METHOD_CURRENCY,
+    PAYMENT_METHOD_LABELS,
+    paysInBolivars,
+    type PaymentCurrency,
+    type PaymentMethod,
+} from '../common/payment-methods.js'
 import { caracasDay } from '../common/utils/caracas-date.js'
-import type { PaymentContent } from '../content/content.types.js'
+import { DEFAULT_SITE_CONTENT } from '../content/content.defaults.js'
 import {
-    artworkFilename,
-    DESIGN_FONTS,
-    originalFilename,
-    type DesignFormat,
-    type LayerPlacement,
-    type TextAlign,
-    type TextOutline,
-} from '../designs/design-layers.js'
-import { dpiLevel, type DpiLevel } from '../designs/design-templates.js'
-import {
-    designColorOf,
-    type DesignColor,
-    type DesignPrintSize,
-} from '../designs/entities/design.entity.js'
+    configuredMethods,
+    isMethodConfigured,
+    type PaymentContent,
+} from '../content/content.types.js'
+import type { StockMode } from '../products/products.constants.js'
 import { RATE_SOURCE_LABELS, type RateSource } from '../exchange-rate/providers/rate-provider.js'
 import type { OrderItem } from './entities/order-item.entity.js'
 import type { OrderNote } from './entities/order-note.entity.js'
 import type { OrderPayment, PaymentSource, PaymentStatus } from './entities/order-payment.entity.js'
 import type { OrderStatusHistory } from './entities/order-status-history.entity.js'
 import type { Order } from './entities/order.entity.js'
-import { amountDifferenceBs, type DeliveryMethod } from './order-pricing.js'
+import { amountDifference, type DeliveryMethod } from './order-pricing.js'
 import { hasReceipt } from './receipt/receipt-availability.js'
 import type { LiveStockConflict } from './stock-conflict.js'
 import type { StatusLabeler } from '../catalogs/order-status-catalog.service.js'
 import {
+    METHOD_SWITCH_STATUSES,
     PAYABLE_STATUSES,
     REFUND_STATUS_LABELS,
     type ActorKind,
@@ -38,6 +37,8 @@ export interface OrderCustomerDto {
     fullName: string
     email: string
     phone: string
+    /** Cédula or RIF; null when not given. */
+    idNumber: string | null
     city: string
     address: string
     deliveryMethod: DeliveryMethod
@@ -45,93 +46,29 @@ export interface OrderCustomerDto {
 }
 
 export interface OrderItemDto {
+    /** Null for a free-text line (from a quote) or a deleted product. */
     productId: string | null
     productName: string
-    productSlug: string
+    productSlug: string | null
     variantId: string | null
     variantLabel: string | null
+    brand: string | null
+    model: string | null
+    stockMode: StockMode
     imageUrl: string | null
     unitPriceUsd: number
     quantity: number
     lineTotalUsd: number
-    personalization: string | null
-    /** The customer's own image ("Diseño propio"); null for a regular line. */
-    design: OrderItemDesignDto | null
-}
-
-export interface OrderItemDesignDto {
-    id: string
-    /**
-     * API path of the mockup preview. Customer: add the order's `?t=` token. Admin: the session
-     * authorizes it.
-     */
-    previewPath: string
-    /** The garment color it was made on ("Negro", `#1F2937`); null without template colors. */
-    color: DesignColor | null
-}
-
-export interface AdminDesignImageLayerDto {
-    type: 'image'
-    /** Position in the design, bottom (0) to top. */
-    index: number
-    /** 1-based among the design's images ("Imagen 2"). */
-    number: number
-    placement: LayerPlacement
-    format: DesignFormat
-    width: number
-    height: number
-    bytes: number
-    dpi: number
-    dpiLevel: DpiLevel
-    /** API path that downloads the original, named like `downloadName`. */
-    downloadPath: string
-    /** API path that shows the original inline (thumbnail). */
-    viewPath: string
-    /** `MR-000123-linea1-imagen1.jpg`. */
-    downloadName: string
-}
-
-export interface AdminDesignTextLayerDto {
-    type: 'text'
-    index: number
-    placement: LayerPlacement
-    content: string
-    font: string
-    fontLabel: string
-    color: string
-    outline: TextOutline
-    align: TextAlign
-}
-
-export type AdminDesignLayerDto = AdminDesignImageLayerDto | AdminDesignTextLayerDto
-
-export interface AdminOrderItemDesignDto extends OrderItemDesignDto {
-    printSize: DesignPrintSize | null
-    /** The lowest DPI among the image layers; null with only text. */
-    dpiEstimate: number | null
-    dpiLevel: DpiLevel | null
-    /** Bottom to top. */
-    layers: AdminDesignLayerDto[]
-    /** The print-ready file; null for older designs (made before it existed). */
-    artwork: {
-        path: string
-        /** `MR-000123-linea1-arte-final.png`. */
-        downloadName: string
-        width: number
-        height: number
-        bytes: number
-        /** Its print resolution (100–200); null if unknown. */
-        dpi: number | null
-    } | null
 }
 
 export interface AdminOrderItemDto extends OrderItemDto {
     id: string
-    design: AdminOrderItemDesignDto | null
 }
 
 export interface OrderTotalsDto {
     subtotalUsd: number
+    /** Discount of a quote converted into the order (0 otherwise). */
+    discountUsd: number
     shippingUsd: number
     totalUsd: number
     totalBs: number
@@ -141,17 +78,32 @@ export interface OrderTotalsDto {
     exchangeRateSourceLabel: string
 }
 
+/** A payment proof, as the customer and the admin see it (null where it does not apply). */
 export interface PublicPaymentDto {
     id: string
-    status: PaymentStatus
+    method: PaymentMethod
     reference: string
-    payerBankCode: string
-    payerBankName: string
-    amountBs: number
+    payerBankCode: string | null
+    payerBankName: string | null
+    payerPhone: string | null
+    payerIdNumber: string | null
+    payerName: string | null
+    payerAccount: string | null
     paidOn: string
+    amountBs: number | null
+    amountUsd: number | null
+    expectedBs: number | null
+    expectedUsd: number | null
+    status: PaymentStatus
     hasProof: boolean
+    /** Recorded after the deadline or while the order was expired. */
+    late: boolean
+    duplicateReference: boolean
+    /** `admin`: recorded by an admin from a proof the customer sent by WhatsApp. */
+    source: PaymentSource
     rejectionReason: string | null
     createdAt: string
+    reviewedAt: string | null
 }
 
 export interface OrderHistoryEntryDto {
@@ -160,6 +112,12 @@ export interface OrderHistoryEntryDto {
     at: string
     /** Only for customer-facing notes: rejection/cancellation reasons and shipping details. */
     note: string | null
+}
+
+/** The amount to pay with the order's method: `totalBs` in VES or `totalUsd` in USD. */
+export interface AmountDueDto {
+    currency: PaymentCurrency
+    amount: number
 }
 
 /** What the customer sees at `/pedido/:code?t=`. */
@@ -171,36 +129,44 @@ export interface PublicOrderDto {
     paymentDueAt: string
     /** The customer may send a payment proof now. */
     canSubmitPayment: boolean
+    /** The customer may still switch the payment method (`PATCH .../payment-method`). */
+    canChangePaymentMethod: boolean
     /** The purchase receipt PDF can be downloaded (verified payment, not cancelled). */
     receiptAvailable: boolean
+    paymentMethod: PaymentMethod
+    paymentMethodLabel: string
+    amountDue: AmountDueDto
+    /** Some line is sold "bajo pedido". */
+    hasOnOrderItems: boolean
+    wantsInstallation: boolean
     customer: OrderCustomerDto
     items: OrderItemDto[]
     totals: OrderTotalsDto
-    /** Where to pay (current Pago Móvil details); null when they are not configured. */
-    pagoMovil: PaymentContent | null
+    /**
+     * Where to pay: the store's payment section, where only the methods offered now keep their
+     * details (the rest come back disabled and empty).
+     */
+    payment: PaymentContent
+    /** The methods offered now, in display order. */
+    availablePaymentMethods: PaymentMethod[]
     payments: PublicPaymentDto[]
     history: OrderHistoryEntryDto[]
 }
 
 export interface PaymentFlagsDto {
     duplicateReference: boolean
+    /** VES for bolívar methods, USD for Zelle and Binance. */
+    currency: PaymentCurrency
     amountMismatch: boolean
-    /** Paid minus expected (Bs); 0 when exact. */
-    amountDifferenceBs: number
+    /** Paid minus expected, in `currency`; 0 when exact. */
+    amountDifference: number
 }
 
 export interface AdminPaymentDto extends PublicPaymentDto, PaymentFlagsDto {
-    /** Recorded after the deadline or while the order was expired. */
-    late: boolean
-    /** `admin`: recorded by an admin from a proof the customer sent by WhatsApp. */
-    source: PaymentSource
+    methodLabel: string
     recordedBy: { id: string; name: string } | null
-    payerPhone: string
-    payerIdNumber: string | null
-    expectedBs: number
     /** API path of the screenshot (authenticated); null when none was sent. */
     proofPath: string | null
-    reviewedAt: string | null
     reviewedBy: { id: string; name: string } | null
 }
 
@@ -261,6 +227,11 @@ export interface AdminOrderDto {
     refund: RefundDto | null
     /** The purchase receipt PDF can be downloaded (verified payment, not cancelled). */
     receiptAvailable: boolean
+    paymentMethod: PaymentMethod
+    paymentMethodLabel: string
+    amountDue: AmountDueDto
+    hasOnOrderItems: boolean
+    wantsInstallation: boolean
     customer: OrderCustomerDto
     items: AdminOrderItemDto[]
     totals: OrderTotalsDto
@@ -279,6 +250,9 @@ export interface AdminOrderListItemDto {
     customerName: string
     customerPhone: string
     deliveryMethod: DeliveryMethod
+    paymentMethod: PaymentMethod
+    hasOnOrderItems: boolean
+    wantsInstallation: boolean
     totalUsd: number
     totalBs: number
     itemCount: number
@@ -288,11 +262,17 @@ export interface AdminOrderListItemDto {
     refundStatus: RefundStatus | null
     /** The newest payment proof, if any. */
     latestPayment:
-        (PaymentFlagsDto & { reference: string; amountBs: number; status: PaymentStatus }) | null
+        | (PaymentFlagsDto & {
+              method: PaymentMethod
+              reference: string
+              amount: number | null
+              status: PaymentStatus
+          })
+        | null
 }
 
 /** History notes the customer may read (the rest may be internal wording). */
-const PUBLIC_NOTE_STATUSES: readonly OrderStatus[] = ['PAGO_RECHAZADO', 'CANCELADO', 'ENVIADO']
+const PUBLIC_NOTE_STATUSES: readonly OrderStatus[] = ['PAGO_RECHAZADO', 'CANCELADO', 'DESPACHADO']
 
 const ACTOR_NAMES: Record<ActorKind, string> = {
     admin: 'Administración',
@@ -301,14 +281,55 @@ const ACTOR_NAMES: Record<ActorKind, string> = {
     telegram: 'Telegram',
 }
 
+/** What was paid and what was expected, in the method's currency. */
+export function paymentAmounts(
+    payment: Pick<OrderPayment, 'method' | 'amountBs' | 'expectedBs' | 'amountUsd' | 'expectedUsd'>,
+): { currency: PaymentCurrency; amount: number | null; expected: number | null } {
+    return paysInBolivars(payment.method)
+        ? { currency: 'VES', amount: payment.amountBs, expected: payment.expectedBs }
+        : { currency: 'USD', amount: payment.amountUsd, expected: payment.expectedUsd }
+}
+
 export function paymentFlags(
-    payment: Pick<OrderPayment, 'amountBs' | 'expectedBs' | 'duplicateReference'>,
+    payment: Pick<
+        OrderPayment,
+        'method' | 'amountBs' | 'expectedBs' | 'amountUsd' | 'expectedUsd' | 'duplicateReference'
+    >,
 ): PaymentFlagsDto {
-    const difference = amountDifferenceBs(payment.amountBs, payment.expectedBs)
+    const { currency, amount, expected } = paymentAmounts(payment)
+    const difference = amountDifference(amount ?? 0, expected ?? 0)
     return {
         duplicateReference: payment.duplicateReference,
+        currency,
         amountMismatch: difference !== 0,
-        amountDifferenceBs: difference,
+        amountDifference: difference,
+    }
+}
+
+/** The amount the order's method pays: bolívars at the frozen rate, or dollars. */
+export function amountDue(
+    order: Pick<Order, 'paymentMethod' | 'totalBs' | 'totalUsd'>,
+): AmountDueDto {
+    const currency = PAYMENT_METHOD_CURRENCY[order.paymentMethod]
+    return { currency, amount: currency === 'VES' ? order.totalBs : order.totalUsd }
+}
+
+/**
+ * The payment section for the customer: offered methods keep their details, the others are
+ * replaced by their disabled, empty defaults (half-filled details never leak).
+ */
+export function offeredPayment(payment: PaymentContent): PaymentContent {
+    const defaults = DEFAULT_SITE_CONTENT.payment
+    return {
+        instructions: payment.instructions,
+        pagoMovil: isMethodConfigured(payment, 'PAGO_MOVIL')
+            ? payment.pagoMovil
+            : { ...defaults.pagoMovil },
+        transfer: isMethodConfigured(payment, 'TRANSFERENCIA')
+            ? payment.transfer
+            : { ...defaults.transfer },
+        zelle: isMethodConfigured(payment, 'ZELLE') ? payment.zelle : { ...defaults.zelle },
+        binance: isMethodConfigured(payment, 'BINANCE') ? payment.binance : { ...defaults.binance },
     }
 }
 
@@ -321,6 +342,7 @@ function toCustomer(order: Order): OrderCustomerDto {
         fullName: order.customerName,
         email: order.customerEmail,
         phone: order.customerPhone,
+        idNumber: order.customerIdNumber,
         city: order.city,
         address: order.address,
         deliveryMethod: order.deliveryMethod,
@@ -328,108 +350,27 @@ function toCustomer(order: Order): OrderCustomerDto {
     }
 }
 
-function toItem(item: OrderItem, code: string): OrderItemDto {
+function toItem(item: OrderItem): OrderItemDto {
     return {
         productId: item.productId,
         productName: item.productName,
         productSlug: item.productSlug,
         variantId: item.variantId,
         variantLabel: item.variantLabel,
+        brand: item.brand,
+        model: item.model,
+        stockMode: item.stockMode,
         imageUrl: item.imageUrl,
         unitPriceUsd: item.unitPriceUsd,
         quantity: item.quantity,
         lineTotalUsd: item.lineTotalUsd,
-        personalization: item.personalization,
-        design: item.designId
-            ? {
-                  id: item.designId,
-                  previewPath: customerDesignPath(code, item.designId),
-                  color: designColorOf(item.design),
-              }
-            : null,
-    }
-}
-
-export function customerDesignPath(code: string, designId: string): string {
-    return `/orders/${encodeURIComponent(code)}/designs/${encodeURIComponent(designId)}/preview`
-}
-
-export function adminDesignPath(code: string, itemId: string, file: string) {
-    return `/admin/orders/${encodeURIComponent(code)}/items/${encodeURIComponent(itemId)}/design/${file}`
-}
-
-function toAdminDesign(item: OrderItem, code: string): AdminOrderItemDesignDto | null {
-    if (!item.designId) return null
-    const design = item.design ?? null
-    const line = item.sortOrder + 1
-    const layers: AdminDesignLayerDto[] = []
-    let number = 0
-    for (const [index, layer] of (design?.layers ?? []).entries()) {
-        if (layer.type === 'text') {
-            layers.push({
-                type: 'text',
-                index,
-                placement: layer.placement,
-                content: layer.content,
-                font: layer.font,
-                fontLabel: DESIGN_FONTS[layer.font] ?? layer.font,
-                color: layer.color,
-                outline: layer.outline,
-                align: layer.align,
-            })
-            continue
-        }
-        number += 1
-        layers.push({
-            type: 'image',
-            index,
-            number,
-            placement: layer.placement,
-            format: layer.format,
-            width: layer.width,
-            height: layer.height,
-            bytes: layer.bytes,
-            dpi: layer.dpi,
-            dpiLevel: dpiLevel(layer.dpi),
-            downloadPath: adminDesignPath(code, item.id, `originals/${number}`),
-            viewPath: adminDesignPath(code, item.id, `originals/${number}/view`),
-            downloadName: originalFilename(code, line, number, layer.format),
-        })
-    }
-    const artwork = design?.assets?.find((asset) => asset.kind === 'artwork') ?? null
-    const dpi = design?.dpiEstimate ?? null
-    return {
-        id: item.designId,
-        previewPath: adminDesignPath(code, item.id, 'preview'),
-        color: designColorOf(design),
-        printSize: design?.printSize ?? null,
-        dpiEstimate: dpi,
-        dpiLevel: dpi === null ? null : dpiLevel(dpi),
-        layers,
-        artwork: artwork
-            ? {
-                  path: adminDesignPath(code, item.id, 'artwork'),
-                  downloadName: artworkFilename(code, line),
-                  width: artwork.width,
-                  height: artwork.height,
-                  bytes: artwork.bytes,
-                  dpi: artwork.dpi ?? null,
-              }
-            : null,
-    }
-}
-
-function toAdminItem(item: OrderItem, code: string): AdminOrderItemDto {
-    return {
-        ...toItem(item, code),
-        id: item.id,
-        design: toAdminDesign(item, code),
     }
 }
 
 function toTotals(order: Order): OrderTotalsDto {
     return {
         subtotalUsd: order.subtotalUsd,
+        discountUsd: order.discountUsd,
         shippingUsd: order.shippingUsd,
         totalUsd: order.totalUsd,
         totalBs: order.totalBs,
@@ -443,15 +384,27 @@ function toTotals(order: Order): OrderTotalsDto {
 function toPublicPayment(payment: OrderPayment): PublicPaymentDto {
     return {
         id: payment.id,
-        status: payment.status,
+        method: payment.method,
         reference: payment.reference,
         payerBankCode: payment.payerBankCode,
         payerBankName: payment.payerBankName,
-        amountBs: payment.amountBs,
+        payerPhone: payment.payerPhone,
+        payerIdNumber: payment.payerIdNumber,
+        payerName: payment.payerName,
+        payerAccount: payment.payerAccount,
         paidOn: payment.paidOn,
+        amountBs: payment.amountBs,
+        amountUsd: payment.amountUsd,
+        expectedBs: payment.expectedBs,
+        expectedUsd: payment.expectedUsd,
+        status: payment.status,
         hasProof: payment.hasProof,
+        late: payment.late,
+        duplicateReference: payment.duplicateReference,
+        source: payment.source,
         rejectionReason: payment.rejectionReason,
         createdAt: payment.createdAt.toISOString(),
+        reviewedAt: payment.reviewedAt?.toISOString() ?? null,
     }
 }
 
@@ -461,7 +414,7 @@ function sortedItems(order: Order): OrderItem[] {
 
 /**
  * A payment proof may be recorded while the order waits for one, even after the deadline or
- * once expired (flagged as late): a real Pago Móvil is never refused. CANCELADO stays closed.
+ * once expired (flagged as late): a real payment is never refused. CANCELADO stays closed.
  */
 export function canSubmitPayment(order: Pick<Order, 'status'>): boolean {
     return PAYABLE_STATUSES.includes(order.status)
@@ -477,9 +430,10 @@ export function isLatePayment(order: Pick<Order, 'paymentDueAt'>, paidOn: string
 }
 
 /** `label` names each status (the catalog's admin label, see `OrderStatusCatalogService`). */
+/** `payment`: the store's current payment section (`GET /content`). */
 export function toPublicOrder(
     order: Order,
-    pagoMovil: PaymentContent | null,
+    payment: PaymentContent,
     label: StatusLabeler,
 ): PublicOrderDto {
     return {
@@ -489,11 +443,14 @@ export function toPublicOrder(
         createdAt: order.createdAt.toISOString(),
         paymentDueAt: order.paymentDueAt.toISOString(),
         canSubmitPayment: canSubmitPayment(order),
+        canChangePaymentMethod: METHOD_SWITCH_STATUSES.includes(order.status),
         receiptAvailable: hasReceipt(order, order.payments ?? []),
+        ...methodFields(order),
         customer: toCustomer(order),
-        items: sortedItems(order).map((item) => toItem(item, order.code)),
+        items: sortedItems(order).map(toItem),
         totals: toTotals(order),
-        pagoMovil,
+        payment: offeredPayment(payment),
+        availablePaymentMethods: configuredMethods(payment),
         payments: sortByDate(order.payments ?? [])
             .reverse()
             .map(toPublicPayment),
@@ -527,6 +484,16 @@ function toAdminNote(note: OrderNote): AdminNoteDto {
     }
 }
 
+function methodFields(order: Order) {
+    return {
+        paymentMethod: order.paymentMethod,
+        paymentMethodLabel: PAYMENT_METHOD_LABELS[order.paymentMethod],
+        amountDue: amountDue(order),
+        hasOnOrderItems: order.hasOnOrderItems,
+        wantsInstallation: order.wantsInstallation,
+    }
+}
+
 export function proofPath(code: string, paymentId: string): string {
     return `/admin/orders/${encodeURIComponent(code)}/payments/${encodeURIComponent(paymentId)}/proof`
 }
@@ -550,6 +517,7 @@ export function toAdminOrder(
         latePayment: order.latePayment,
         stockConflict,
         receiptAvailable: hasReceipt(order, order.payments ?? []),
+        ...methodFields(order),
         refund: order.refundStatus
             ? {
                   status: order.refundStatus,
@@ -562,23 +530,18 @@ export function toAdminOrder(
               }
             : null,
         customer: toCustomer(order),
-        items: sortedItems(order).map((item) => toAdminItem(item, order.code)),
+        items: sortedItems(order).map((item) => ({ ...toItem(item), id: item.id })),
         totals: toTotals(order),
         payments: sortByDate(order.payments ?? [])
             .reverse()
             .map((payment) => ({
                 ...toPublicPayment(payment),
                 ...paymentFlags(payment),
-                late: payment.late,
-                source: payment.source,
+                methodLabel: PAYMENT_METHOD_LABELS[payment.method],
                 recordedBy: payment.recordedBy
                     ? { id: payment.recordedBy.id, name: payment.recordedBy.name }
                     : null,
-                payerPhone: payment.payerPhone,
-                payerIdNumber: payment.payerIdNumber,
-                expectedBs: payment.expectedBs,
                 proofPath: payment.hasProof ? proofPath(order.code, payment.id) : null,
-                reviewedAt: payment.reviewedAt?.toISOString() ?? null,
                 reviewedBy: payment.reviewedBy
                     ? { id: payment.reviewedBy.id, name: payment.reviewedBy.name }
                     : null,

@@ -33,7 +33,7 @@ export interface StockChange {
     quantity: number
 }
 
-/** "Franela X – Talla M", or just the product name when there is no variant. */
+/** "Split X – 220V", or just the product name when there is no variant. */
 export function stockItemName(productName: string, variantLabel?: string | null): string {
     return variantLabel ? `${productName} – ${variantLabel}` : productName
 }

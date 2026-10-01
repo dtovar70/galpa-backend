@@ -3,8 +3,12 @@ import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import { OrderStatusCatalogService } from '../../catalogs/order-status-catalog.service.js'
 import { ContentService } from '../../content/content.service.js'
-import { designTextsSummary } from '../../designs/design-layers.js'
+import type { PdfFile } from '../../common/http/send-pdf.js'
+import { PAYMENT_METHOD_LABELS, paysInBolivars } from '../../common/payment-methods.js'
+import { formatDay } from '../../common/utils/caracas-date.js'
+import { formatBs, formatUsd } from '../../common/utils/money-format.js'
 import { RATE_SOURCE_LABELS } from '../../exchange-rate/providers/rate-provider.js'
+import type { OrderPayment } from '../entities/order-payment.entity.js'
 import { Order } from '../entities/order.entity.js'
 import { OrderAccessService } from '../order-access.service.js'
 import { ORDER_NOT_FOUND } from '../order-status.service.js'
@@ -17,10 +21,7 @@ export const RECEIPT_NOT_AVAILABLE =
 export const RECEIPT_CANCELLED =
     'Este pedido fue cancelado, así que no tiene comprobante de compra.'
 
-export interface ReceiptFile {
-    filename: string
-    content: Buffer
-}
+export type ReceiptFile = PdfFile
 
 const dateTimeFormatter = new Intl.DateTimeFormat('es-VE', {
     timeZone: 'America/Caracas',
@@ -31,15 +32,47 @@ const dateTimeFormatter = new Intl.DateTimeFormat('es-VE', {
     minute: '2-digit',
 })
 
-/** "2026-09-24" -> "24/09/2026". */
-function formatDay(day: string): string {
-    const [year, month, date] = day.split('-')
-    return year && month && date ? `${date}/${month}/${year}` : day
-}
-
 /** Instant in Caracas time: "25/09/2026, 10:42 a. m.". */
 export function formatCaracasDateTime(date: Date): string {
     return dateTimeFormatter.format(date).replace(/ | /g, ' ')
+}
+
+/** The verified payment's details as printed, per method. */
+export function paymentDetailRows(payment: OrderPayment): [string, string][] {
+    const paidOn: [string, string] = ['Fecha del pago', formatDay(payment.paidOn)]
+    switch (payment.method) {
+        case 'PAGO_MOVIL':
+            return [
+                ['Banco', payment.payerBankName ?? '—'],
+                ['Referencia', payment.reference],
+                ['Teléfono pagador', payment.payerPhone ?? '—'],
+                paidOn,
+                ['Monto pagado', formatBs(payment.amountBs ?? 0)],
+            ]
+        case 'TRANSFERENCIA':
+            return [
+                ['Banco', payment.payerBankName ?? '—'],
+                ['Referencia', payment.reference],
+                ['Cédula/RIF', payment.payerIdNumber ?? '—'],
+                paidOn,
+                ['Monto pagado', formatBs(payment.amountBs ?? 0)],
+            ]
+        case 'ZELLE':
+            return [
+                ['Titular', payment.payerName ?? '—'],
+                ['Cuenta Zelle', payment.payerAccount ?? '—'],
+                ['Confirmación', payment.reference],
+                paidOn,
+                ['Monto pagado', formatUsd(payment.amountUsd ?? 0)],
+            ]
+        case 'BINANCE':
+            return [
+                ['Cuenta Binance', payment.payerAccount ?? '—'],
+                ['ID de la orden', payment.reference],
+                paidOn,
+                ['Monto pagado', formatUsd(payment.amountUsd ?? 0)],
+            ]
+    }
 }
 
 /**
@@ -80,7 +113,7 @@ export class ReceiptService {
     ): Promise<ReceiptFile> {
         const order = await this.dataSource.getRepository(Order).findOne({
             where: { code },
-            relations: { items: { design: true }, payments: true },
+            relations: { items: true, payments: true },
         })
         if (!order) throw new NotFoundException(ORDER_NOT_FOUND)
         const payments = order.payments ?? []
@@ -109,10 +142,11 @@ export class ReceiptService {
                 name: order.customerName,
                 email: order.customerEmail,
                 phone: order.customerPhone,
+                idNumber: order.customerIdNumber,
             },
             delivery:
                 order.deliveryMethod === 'pickup'
-                    ? { method: 'Retiro en el taller', address: content.contact.city }
+                    ? { method: 'Retiro en tienda', address: content.contact.city }
                     : {
                           method: 'Envío a domicilio',
                           address: [order.address, order.city].filter(Boolean).join(', '),
@@ -122,15 +156,14 @@ export class ReceiptService {
                 .map((item) => ({
                     name: item.productName,
                     variant: item.variantLabel,
-                    personalization: item.personalization,
-                    hasDesign: Boolean(item.designId),
-                    designColor: item.design?.colorName ?? null,
-                    designTexts: designTextsSummary(item.design?.layers),
+                    brandModel: [item.brand, item.model].filter(Boolean).join(' · ') || null,
+                    onOrder: Boolean(item.productId) && item.stockMode === 'ON_ORDER',
                     quantity: item.quantity,
                     unitUsd: item.unitPriceUsd,
                     totalUsd: item.lineTotalUsd,
                 })),
             subtotalUsd: order.subtotalUsd,
+            discountUsd: order.discountUsd,
             shippingUsd: order.shippingUsd,
             totalUsd: order.totalUsd,
             exchangeRate: order.exchangeRate,
@@ -139,11 +172,9 @@ export class ReceiptService {
                 RATE_SOURCE_LABELS[order.exchangeRateSource] ?? order.exchangeRateSource,
             totalBs: order.totalBs,
             payment: {
-                bankName: payment.payerBankName,
-                reference: payment.reference,
-                payerPhone: payment.payerPhone,
-                paidOn: formatDay(payment.paidOn),
-                amountBs: payment.amountBs,
+                methodLabel: PAYMENT_METHOD_LABELS[payment.method],
+                inBolivars: paysInBolivars(payment.method),
+                details: paymentDetailRows(payment),
             },
         }
         return { filename: `comprobante-${order.code}.pdf`, content: await renderReceiptPdf(data) }

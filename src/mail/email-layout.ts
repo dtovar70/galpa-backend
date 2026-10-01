@@ -4,7 +4,7 @@ import { toWhatsAppPhone } from '../orders/whatsapp/whatsapp-template.js'
 /**
  * A tiny email builder: the content is a list of blocks rendered twice, as table-based HTML with
  * inline CSS (what email clients understand) and as its plain-text alternative. Every value is
- * escaped here, so templates pass raw user data (names, personalization, addresses).
+ * escaped here, so templates pass raw user data (names, notes, addresses).
  */
 
 /** Plain text, a bold part, or a link. */
@@ -19,25 +19,8 @@ export type EmailBlock =
     /** Label/value pairs (payment data, totals). `strong` highlights a row (the amount to pay). */
     | { kind: 'rows'; title?: string; rows: { label: string; value: string; strong?: boolean }[] }
     /** Ordered lines: a title, detail lines below it and an amount on the right. */
-    | { kind: 'items'; items: { title: string; details: EmailItemDetail[]; amount: string }[] }
+    | { kind: 'items'; items: { title: string; details: string[]; amount: string }[] }
     | { kind: 'divider' }
-
-/** A detail line of an item; with `swatch` (`#RRGGBB`) a small color dot precedes it. */
-export type EmailItemDetail = string | { text: string; swatch: string }
-
-const SWATCH_PATTERN = /^#[0-9A-Fa-f]{6}$/
-
-function detailText(detail: EmailItemDetail): string {
-    return typeof detail === 'string' ? detail : detail.text
-}
-
-function detailHtml(detail: EmailItemDetail): string {
-    const swatch =
-        typeof detail !== 'string' && SWATCH_PATTERN.test(detail.swatch)
-            ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${detail.swatch};border:1px solid ${COLOR.line};vertical-align:middle;margin-right:6px;"></span>`
-            : ''
-    return `${swatch}${escapeHtml(detailText(detail))}`
-}
 
 export interface EmailLayoutInput {
     brandName: string
@@ -52,17 +35,18 @@ export interface RenderedEmail {
     text: string
 }
 
+/** Galpa palette: brand green on a frost-white page, ink-black text. */
 const COLOR = {
-    ink: '#2e2438',
-    inkSoft: '#6b5f78',
-    line: '#f0e4ec',
-    cream: '#fff9fb',
-    blush: '#ffe7f1',
-    button: '#c44a80',
-    accent: '#e75f9b',
-    white: '#ffffff',
+    ink: '#0A0F0D',
+    inkSoft: '#5B6660',
+    line: '#E3EAE6',
+    surface: '#F3F8F5',
+    page: '#ECF5F0',
+    button: '#059669',
+    accent: '#10B981',
+    white: '#FFFFFF',
 }
-const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif"
+const FONT = "'Plus Jakarta Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
 /** Escapes text for HTML content and attribute values. */
 export function escapeHtml(value: string): string {
@@ -133,7 +117,7 @@ function blockHtml(block: EmailBlock): string {
                 })
                 .join('')
             return cell(
-                `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLOR.cream};border:1px solid ${COLOR.line};border-radius:16px;padding:14px 16px;">${title}${rows}</table>`,
+                `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLOR.surface};border:1px solid ${COLOR.line};border-radius:16px;padding:14px 16px;">${title}${rows}</table>`,
             )
         }
         case 'items': {
@@ -142,7 +126,7 @@ function blockHtml(block: EmailBlock): string {
                     const details = item.details
                         .map(
                             (detail) =>
-                                `<br><span style="font-size:13px;color:${COLOR.inkSoft};">${detailHtml(detail)}</span>`,
+                                `<br><span style="font-size:13px;color:${COLOR.inkSoft};">${escapeHtml(detail)}</span>`,
                         )
                         .join('')
                     return `<tr><td valign="top" style="padding:10px 12px 10px 0;border-bottom:1px solid ${COLOR.line};font-size:14px;color:${COLOR.ink};word-break:break-word;"><strong>${escapeHtml(item.title)}</strong>${details}</td><td valign="top" align="right" style="padding:10px 0;border-bottom:1px solid ${COLOR.line};font-size:14px;color:${COLOR.ink};white-space:nowrap;">${escapeHtml(item.amount)}</td></tr>`
@@ -175,7 +159,7 @@ function blockText(block: EmailBlock): string {
                 .map((item) =>
                     [
                         `- ${item.title} — ${item.amount}`,
-                        ...item.details.map((d) => `  ${detailText(d)}`),
+                        ...item.details.map((detail) => `  ${detail}`),
                     ].join('\n'),
                 )
                 .join('\n')
@@ -230,13 +214,13 @@ export function renderEmail(input: EmailLayoutInput): RenderedEmail {
 <meta name="x-apple-disable-message-reformatting">
 <title>${brand}</title>
 </head>
-<body style="margin:0;padding:0;background:${COLOR.blush};">
+<body style="margin:0;padding:0;background:${COLOR.page};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(input.preheader)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLOR.blush};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLOR.page};">
 <tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;font-family:${FONT};">
-<tr><td align="center" style="padding:8px 0 20px 0;font-size:24px;font-weight:700;color:${COLOR.accent};letter-spacing:0.3px;">🐾 ${brand}</td></tr>
-<tr><td style="background:${COLOR.white};border-radius:24px;padding:28px 24px 12px 24px;">
+<tr><td align="center" style="padding:8px 0 20px 0;"><span style="display:inline-block;width:36px;height:36px;line-height:36px;border-radius:10px;background:${COLOR.accent};color:${COLOR.white};font-size:20px;font-weight:800;text-align:center;vertical-align:middle;">G</span><span style="font-size:22px;font-weight:700;color:${COLOR.ink};letter-spacing:0.2px;vertical-align:middle;margin-left:10px;">${brand}</span></td></tr>
+<tr><td style="background:${COLOR.white};border-top:4px solid ${COLOR.accent};border-radius:20px;padding:28px 24px 12px 24px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${body}</table>
 </td></tr>
 <tr><td align="center" style="padding:20px 12px 8px 12px;font-size:12px;line-height:1.6;color:${COLOR.inkSoft};">

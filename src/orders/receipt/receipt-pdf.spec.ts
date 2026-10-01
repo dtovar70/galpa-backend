@@ -1,50 +1,69 @@
+import { printable } from '../../common/pdf/pdf-brand.js'
 import { orderQrPng } from '../qr/order-qr.js'
-import {
-    personalizationCell,
-    printable,
-    renderReceiptPdf,
-    type ReceiptData,
-} from './receipt-pdf.js'
+import { brandModelCell, renderReceiptPdf, type ReceiptData } from './receipt-pdf.js'
 
-function receipt(items: number): ReceiptData {
+function receipt(items: number, inBolivars = true): ReceiptData {
     return {
-        brandName: 'Manada Russo Creativa',
-        tagline: 'Sublimación hecha con amor',
+        brandName: 'Corporación Galpa 2022 C.A.',
+        tagline: '30 años climatizando tus espacios',
         contact: {
-            phone: '0414-5086536',
-            whatsapp: '0414-5086536',
-            email: 'hola@manadarusso.com',
-            city: 'Quíbor, estado Lara',
-            instagram: 'manadarussocreativa',
+            phone: '0414-0000000',
+            whatsapp: '0414-0000000',
+            email: 'ventas@galpa.com.ve',
+            city: 'Dirección por configurar',
+            instagram: 'galpa2022',
         },
-        code: 'MR-000012',
+        code: 'GP-000012',
         issuedAt: '25/09/2026, 10:42 a. m.',
         verifiedAt: '24/09/2026, 3:05 p. m.',
-        statusLabel: 'En producción',
-        customer: { name: 'Ana María Pérez', email: 'ana@example.com', phone: '0414-1234567' },
+        statusLabel: 'Preparando despacho',
+        customer: {
+            name: 'Ana María Pérez',
+            email: 'ana@example.com',
+            phone: '0414-1234567',
+            idNumber: 'V-12345678',
+        },
         delivery: { method: 'Envío a domicilio', address: 'Av. Principal, casa 4, Caracas' },
         items: Array.from({ length: items }, (_, index) => ({
-            name: `Taza Ñandú ${index + 1}`,
-            variant: '15 oz',
-            personalization: index % 2 ? 'Feliz cumpleaños, Begoña – 2026 · ¡Te quiero! 🎉' : null,
+            name: `Split Inverter Ñandú ${index + 1}`,
+            variant: '220V',
+            brandModel: 'LG · S4-Q12JA',
+            onOrder: index % 2 === 1,
             quantity: 2,
-            unitUsd: 16,
-            totalUsd: 32,
+            unitUsd: 640,
+            totalUsd: 1280,
         })),
-        subtotalUsd: 32 * items,
+        subtotalUsd: 1280 * items,
+        discountUsd: 0,
         shippingUsd: 0,
-        totalUsd: 32 * items,
-        exchangeRate: 854.4637,
+        totalUsd: 1280 * items,
+        exchangeRate: 154.4637,
         exchangeRateDate: '24/09/2026',
         exchangeRateSource: 'BCV (bcv.org.ve)',
-        totalBs: 27342.84 * items,
-        payment: {
-            bankName: 'Banco de Venezuela',
-            reference: '00123456',
-            payerPhone: '0414-1234567',
-            paidOn: '24/09/2026',
-            amountBs: 27342.84 * items,
-        },
+        totalBs: 197713.54 * items,
+        payment: inBolivars
+            ? {
+                  methodLabel: 'Pago Móvil',
+                  inBolivars: true,
+                  details: [
+                      ['Banco', 'Banco de Venezuela'],
+                      ['Referencia', '00123456'],
+                      ['Teléfono pagador', '0414-1234567'],
+                      ['Fecha del pago', '24/09/2026'],
+                      ['Monto pagado', 'Bs. 197.713,54'],
+                  ],
+              }
+            : {
+                  methodLabel: 'Zelle',
+                  inBolivars: false,
+                  details: [
+                      ['Titular', 'Ana Pérez'],
+                      ['Cuenta Zelle', 'ana@example.com'],
+                      ['Confirmación', 'ZL12AB34'],
+                      ['Fecha del pago', '24/09/2026'],
+                      ['Monto pagado', '$1.280,00'],
+                  ],
+              },
     }
 }
 
@@ -60,15 +79,20 @@ describe('receipt PDF', () => {
         expect(pageCount(pdf)).toBe(1)
         const raw = pdf.toString('latin1')
         expect(raw).toContain('PlusJakartaSans')
-        expect(raw).toContain('Fredoka')
+        expect(raw).toContain('SpaceGrotesk')
         expect(raw).toContain('/MediaBox [0 0 595.28 841.89]')
+    })
+
+    it('renders a dollar payment (Zelle) with a discount', async () => {
+        const pdf = await renderReceiptPdf({ ...receipt(2, false), discountUsd: 50 })
+        expect(pageCount(pdf)).toBe(1)
     })
 
     it('prints the order QR next to the totals and stays on one page', async () => {
         const plain = await renderReceiptPdf(receipt(3))
         const withQr = await renderReceiptPdf({
             ...receipt(3),
-            orderQr: await orderQrPng('https://manadarusso.com/pedido/MR-000012?t=abc', 360),
+            orderQr: await orderQrPng('https://galpa.com.ve/pedido/GP-000012?t=abc', 360),
         })
         const images = (pdf: Buffer) =>
             pdf.toString('latin1').match(/\/Subtype \/Image/g)?.length ?? 0
@@ -76,21 +100,11 @@ describe('receipt PDF', () => {
         expect(pageCount(withQr)).toBe(1)
     })
 
-    it('names the own design and its garment color in the personalization column', () => {
-        expect(
-            personalizationCell({ hasDesign: true, designColor: 'Negro', personalization: 'Luna' }),
-        ).toBe('Diseño propio\nColor: Negro\n“Luna”')
-        expect(personalizationCell({ hasDesign: true, personalization: null })).toBe(
-            'Diseño propio',
+    it('shows brand, model and "Bajo pedido" in the brand column', () => {
+        expect(brandModelCell({ brandModel: 'Daikin · FTKF09', onOrder: true })).toBe(
+            'Daikin · FTKF09\nBajo pedido',
         )
-        expect(personalizationCell({ hasDesign: false, personalization: null })).toBe('—')
-        expect(
-            personalizationCell({
-                hasDesign: true,
-                designTexts: '«Sofía 7 🎂», «Luna»',
-                personalization: null,
-            }),
-        ).toBe('Diseño propio con texto «Sofía 7 », «Luna»')
+        expect(brandModelCell({ brandModel: null, onOrder: false })).toBe('—')
     })
 
     it('paginates long item lists', async () => {

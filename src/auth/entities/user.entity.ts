@@ -4,7 +4,7 @@ import { Role } from '../role.enum.js'
 
 @Entity({ name: 'users' })
 @Index('users_email_key', ['email'], { unique: true })
-/** `UNIQUE (lower(email))`, created by hand in a migration (TypeORM cannot express it). */
+/** `UNIQUE (lower(email))`, created by hand in the InitialSchema migration (not expressible here). */
 @Index('users_email_lower_key', { synchronize: false })
 export class User {
     @PrimaryColumn({ type: 'text', primaryKeyConstraintName: 'users_pkey' })

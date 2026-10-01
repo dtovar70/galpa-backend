@@ -3,7 +3,6 @@ import { Test } from '@nestjs/testing'
 import request from 'supertest'
 import { AdminCategoriesController } from '../src/categories/categories.controller.js'
 import { CategoriesService } from '../src/categories/categories.service.js'
-import { CategoryDesignTemplateService } from '../src/categories/category-design-template.service.js'
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js'
 
 /**
@@ -14,17 +13,14 @@ describe('Admin categories routes (e2e)', () => {
     let app: INestApplication
     const service = {
         reorder: vi.fn().mockResolvedValue([]),
-        update: vi.fn().mockResolvedValue({ slug: 'mugs' }),
+        update: vi.fn().mockResolvedValue({ slug: 'aires-residenciales' }),
     }
 
     beforeEach(async () => {
         vi.clearAllMocks()
         const moduleFixture = await Test.createTestingModule({
             controllers: [AdminCategoriesController],
-            providers: [
-                { provide: CategoriesService, useValue: service },
-                { provide: CategoryDesignTemplateService, useValue: {} },
-            ],
+            providers: [{ provide: CategoriesService, useValue: service }],
         }).compile()
 
         app = moduleFixture.createNestApplication()
@@ -40,25 +36,29 @@ describe('Admin categories routes (e2e)', () => {
     it('PATCH /api/admin/categories/order reorders instead of updating a category', async () => {
         await request(app.getHttpServer())
             .patch('/api/admin/categories/order')
-            .send({ slugs: ['tees', 'mugs', 'keychains'] })
+            .send({ slugs: ['repuestos', 'aires-residenciales', 'accesorios'] })
             .expect(200)
-        expect(service.reorder).toHaveBeenCalledWith(['tees', 'mugs', 'keychains'])
+        expect(service.reorder).toHaveBeenCalledWith([
+            'repuestos',
+            'aires-residenciales',
+            'accesorios',
+        ])
         expect(service.update).not.toHaveBeenCalled()
     })
 
     it('PATCH /api/admin/categories/:slug still updates a category', async () => {
         await request(app.getHttpServer())
-            .patch('/api/admin/categories/mugs')
-            .send({ name: 'Tazas' })
+            .patch('/api/admin/categories/aires-residenciales')
+            .send({ name: 'Aires Split' })
             .expect(200)
-        expect(service.update).toHaveBeenCalledWith('mugs', { name: 'Tazas' })
+        expect(service.update).toHaveBeenCalledWith('aires-residenciales', { name: 'Aires Split' })
         expect(service.reorder).not.toHaveBeenCalled()
     })
 
     it('rejects repeated slugs in Spanish before reaching the service', async () => {
         const response = await request(app.getHttpServer())
             .patch('/api/admin/categories/order')
-            .send({ slugs: ['mugs', 'mugs'] })
+            .send({ slugs: ['aires-residenciales', 'aires-residenciales'] })
             .expect(400)
         expect(response.body.details).toEqual([
             {

@@ -79,7 +79,9 @@ class CatalogDb {
         }
         if (sql.includes('FROM "site_content"')) {
             return Promise.resolve(
-                this.paymentContentBank ? [{ code: this.paymentContentBank }] : [],
+                this.paymentContentBank
+                    ? [{ pagoMovil: null, transfer: this.paymentContentBank }]
+                    : [],
             )
         }
         throw new Error(`Unexpected SQL: ${sql}`)
@@ -181,7 +183,7 @@ describe('Catalogs (e2e)', () => {
         app = await createApp(db)
         const signer = new JwtService({ secret: app.get(ConfigService).get<string>('JWT_SECRET') })
         cookie = (user) =>
-            `mr_session=${signer.sign({ sub: USERS[user].id, role: USERS[user].role }, { expiresIn: 600 })}`
+            `galpa_session=${signer.sign({ sub: USERS[user].id, role: USERS[user].role }, { expiresIn: 600 })}`
     })
 
     afterEach(async () => {
@@ -218,10 +220,10 @@ describe('Catalogs (e2e)', () => {
             statuses: ['PENDIENTE_VERIFICACION'],
         })
         expect(body.groups[1]?.statuses).toEqual(['PENDIENTE_PAGO', 'PAGO_RECHAZADO'])
-        expect(body.statuses).toHaveLength(10)
+        expect(body.statuses).toHaveLength(11)
         expect(body.statuses[1]).toMatchObject({
             code: 'PENDIENTE_VERIFICACION',
-            label: 'Pendiente por verificación',
+            label: 'Comprobante por verificar',
         })
 
         await request(app.getHttpServer())
@@ -258,7 +260,7 @@ describe('Catalogs (e2e)', () => {
                 label: '  Por revisar  ',
                 customerLabel: 'Pago recibido',
                 customerDescription: 'Lo revisamos en {marca}.',
-                tone: 'lilac',
+                tone: 'outline',
             })
             .expect(200)
         expect(
@@ -269,7 +271,7 @@ describe('Catalogs (e2e)', () => {
             label: 'Por revisar',
             customerLabel: 'Pago recibido',
             customerDescription: 'Lo revisamos en {marca}.',
-            tone: 'lilac',
+            tone: 'outline',
         })
 
         const catalog = await request(app.getHttpServer())
@@ -286,7 +288,7 @@ describe('Catalogs (e2e)', () => {
             { label: 'Ok', sortOrder: 3 },
         ]) {
             const response = await request(app.getHttpServer())
-                .patch('/api/admin/catalogs/order-statuses/ENVIADO')
+                .patch('/api/admin/catalogs/order-statuses/DESPACHADO')
                 .set('Cookie', cookie('admin'))
                 .send(body)
                 .expect(400)
@@ -297,7 +299,7 @@ describe('Catalogs (e2e)', () => {
         }
 
         const invalid = await request(app.getHttpServer())
-            .patch('/api/admin/catalogs/order-statuses/ENVIADO')
+            .patch('/api/admin/catalogs/order-statuses/DESPACHADO')
             .set('Cookie', cookie('admin'))
             .send({ label: ' ', tone: 'red', customerDescription: 'Hola {nombre}' })
             .expect(400)
@@ -305,9 +307,7 @@ describe('Catalogs (e2e)', () => {
             { field: 'label', errors: ['El nombre del estado es obligatorio.'] },
             {
                 field: 'customerDescription',
-                errors: [
-                    'El mensaje al cliente solo admite los marcadores {produccion} y {marca}.',
-                ],
+                errors: ['El mensaje al cliente solo admite los marcadores {despacho} y {marca}.'],
             },
             { field: 'tone', errors: ['El color no es válido.'] },
         ])
@@ -317,9 +317,9 @@ describe('Catalogs (e2e)', () => {
             .set('Cookie', cookie('admin'))
             .send({ label: 'X' })
             .expect(404)
-        expect(db.table(OrderStatusDefinition).find((row) => row.code === 'ENVIADO')).toMatchObject(
-            { label: 'Enviado', groupCode: 'EN_CURSO' },
-        )
+        expect(
+            db.table(OrderStatusDefinition).find((row) => row.code === 'DESPACHADO'),
+        ).toMatchObject({ label: 'Despachado', groupCode: 'EN_CURSO' })
     })
 
     it('edits a tab: label, description and position, never its code', async () => {
@@ -393,7 +393,7 @@ describe('Catalogs (e2e)', () => {
         db.paymentContentBank = '0102'
         const inUse = await admin('delete', '/0102').expect(409)
         expect(inUse.body.message).toBe(
-            'No puedes eliminar este banco porque lo usan 2 pagos registrados y es el banco de tus datos de Pago Móvil. Desactívalo para ocultarlo.',
+            'No puedes eliminar este banco porque lo usan 2 pagos registrados y es el banco de tus datos de pago. Desactívalo para ocultarlo.',
         )
         await admin('delete', '/0199').expect(204)
         expect(db.table(Bank).map((bank) => bank.code)).toEqual(['0102', '0104', '0134'])
@@ -435,7 +435,7 @@ describe('Catalogs (e2e)', () => {
             .expect(403)
 
         db.activeOrdersByPrefix.set('0412', 2)
-        db.contentRows = [{ key: 'payment', value: { phone: '0424-1234567' } }]
+        db.contentRows = [{ key: 'payment', value: { pagoMovil: { phone: '0424-1234567' } } }]
         const list = await admin('get', '').expect(200).expect('Cache-Control', 'no-store')
         expect(list.body[0]).toEqual({
             code: '0412',

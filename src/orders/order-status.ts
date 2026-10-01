@@ -10,9 +10,10 @@ export const ORDER_STATUSES = [
     'PENDIENTE_VERIFICACION',
     'PAGO_VERIFICADO',
     'PAGO_RECHAZADO',
-    'EN_PRODUCCION',
-    'LISTO_PARA_ENTREGA',
-    'ENVIADO',
+    'ESPERANDO_MERCANCIA',
+    'EN_PREPARACION',
+    'LISTO_PARA_RETIRO',
+    'DESPACHADO',
     'ENTREGADO',
     'CANCELADO',
     'EXPIRADO',
@@ -26,7 +27,7 @@ export function isOrderStatus(value: string): value is OrderStatus {
 
 /**
  * Statuses in which a payment proof may be recorded (by the customer or, for a proof sent by
- * WhatsApp, by the admin). There is no deadline check: a real Pago Móvil is never refused, a late
+ * WhatsApp, by the admin). There is no deadline check: a real payment is never refused, a late
  * one is flagged for the owner instead. CANCELADO stays closed.
  */
 export const PAYABLE_STATUSES: readonly OrderStatus[] = [
@@ -52,11 +53,15 @@ export const REFUND_STATUS_LABELS: Record<RefundStatus, string> = {
  */
 export const RECEIPT_STATUSES: readonly OrderStatus[] = [
     'PAGO_VERIFICADO',
-    'EN_PRODUCCION',
-    'LISTO_PARA_ENTREGA',
-    'ENVIADO',
+    'ESPERANDO_MERCANCIA',
+    'EN_PREPARACION',
+    'LISTO_PARA_RETIRO',
+    'DESPACHADO',
     'ENTREGADO',
 ]
+
+/** The customer may still switch the payment method (`PATCH /orders/:code/payment-method`). */
+export const METHOD_SWITCH_STATUSES: readonly OrderStatus[] = ['PENDIENTE_PAGO', 'PAGO_RECHAZADO']
 
 /** Orders in these statuses no longer hold stock nor count for duplicate references. */
 export const CLOSED_STATUSES: readonly OrderStatus[] = ['CANCELADO', 'EXPIRADO']
@@ -68,8 +73,8 @@ export const CLOSED_STATUSES: readonly OrderStatus[] = ['CANCELADO', 'EXPIRADO']
 export const FINISHED_STATUSES: readonly OrderStatus[] = ['ENTREGADO', ...CLOSED_STATUSES]
 
 /**
- * Who moves an order. `admin` is a back-office user, `telegram` the (future) Telegram bot acting
- * for the owner, `customer` the buyer through their private link, `system` the scheduler.
+ * Who moves an order. `admin` is a back-office user, `telegram` the Telegram bot acting for the
+ * owner, `customer` the buyer through their private link, `system` the scheduler.
  */
 export type OrderActor =
     | { kind: 'admin'; userId: string; role: Role }
@@ -100,8 +105,6 @@ export interface TransitionRule {
      * enough, unless the admin forces it (then flagged as a stock conflict).
      */
     reactivates?: boolean
-    /** Refused when any payment of the order was ever verified. */
-    requiresNoVerifiedPayment?: boolean
 }
 
 const STAFF: readonly ActorKind[] = ['admin', 'telegram']
@@ -113,10 +116,6 @@ const CANCEL: TransitionRule = {
     restoresStock: true,
 }
 
-/**
- * Every allowed status change. Anything not listed is rejected with 409. This map is the single
- * source of truth for the admin API, the scheduler and the future Telegram bot.
- */
 /** A payment proof recorded by the customer, or by an admin for a proof sent by WhatsApp. */
 const PAYMENT_RECORDED: TransitionRule = {
     to: 'PENDIENTE_VERIFICACION',
@@ -124,6 +123,11 @@ const PAYMENT_RECORDED: TransitionRule = {
     requiresPayment: true,
 }
 
+/**
+ * Every allowed status change. Anything not listed is rejected with 409. This map is the single
+ * source of truth for the admin API, the scheduler and the Telegram bot. Only the STOCK-mode
+ * lines of an order hold stock, so `restoresStock` / `reservesStock` never touch ON_ORDER lines.
+ */
 export const ORDER_TRANSITIONS: Record<OrderStatus, readonly TransitionRule[]> = {
     PENDIENTE_PAGO: [
         PAYMENT_RECORDED,
@@ -133,36 +137,28 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, readonly TransitionRule[]> =
     PENDIENTE_VERIFICACION: [
         { to: 'PAGO_VERIFICADO', actors: STAFF },
         { to: 'PAGO_RECHAZADO', actors: STAFF, requiresReason: true },
-        CANCEL,
     ],
     PAGO_RECHAZADO: [PAYMENT_RECORDED, CANCEL],
-    PAGO_VERIFICADO: [{ to: 'EN_PRODUCCION', actors: STAFF }, CANCEL],
-    EN_PRODUCCION: [{ to: 'LISTO_PARA_ENTREGA', actors: STAFF }, CANCEL],
-    LISTO_PARA_ENTREGA: [
-        { to: 'ENVIADO', actors: STAFF },
-        // Store pickup: handed over without shipping.
-        { to: 'ENTREGADO', actors: STAFF },
+    PAGO_VERIFICADO: [
+        // Some line is "bajo pedido": the goods are ordered from the supplier first.
+        { to: 'ESPERANDO_MERCANCIA', actors: STAFF },
+        { to: 'EN_PREPARACION', actors: STAFF },
         CANCEL,
     ],
-    // Already shipped: a cancellation keeps the stock out (the goods left the workshop).
-    ENVIADO: [
-        { to: 'ENTREGADO', actors: STAFF },
-        { ...CANCEL, restoresStock: false },
+    ESPERANDO_MERCANCIA: [{ to: 'EN_PREPARACION', actors: STAFF }, CANCEL],
+    EN_PREPARACION: [
+        // Store pickup.
+        { to: 'LISTO_PARA_RETIRO', actors: STAFF },
+        // Delivery: the note carries the carrier and tracking details.
+        { to: 'DESPACHADO', actors: STAFF },
+        CANCEL,
     ],
+    LISTO_PARA_RETIRO: [{ to: 'ENTREGADO', actors: STAFF }],
+    DESPACHADO: [{ to: 'ENTREGADO', actors: STAFF }],
     ENTREGADO: [],
-    // Reactivation (ADMIN only) of an order cancelled before any payment was verified.
-    CANCELADO: [
-        {
-            to: 'PENDIENTE_PAGO',
-            actors: ['admin'],
-            adminRoles: [Role.ADMIN],
-            reservesStock: true,
-            reactivates: true,
-            requiresNoVerifiedPayment: true,
-        },
-    ],
+    CANCELADO: [],
     EXPIRADO: [
-        // A late Pago Móvil: accepted, flagged, and the stock is taken again if it is there.
+        // A late payment: accepted, flagged, and the stock is taken again if it is there.
         { ...PAYMENT_RECORDED, reservesStock: true },
         { to: 'PENDIENTE_PAGO', actors: ['admin'], reservesStock: true, reactivates: true },
     ],

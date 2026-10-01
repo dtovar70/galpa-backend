@@ -11,14 +11,17 @@ describe('buildCatalogConditions', () => {
     it('maps category, price range and tags to parameterized clauses', () => {
         expect(
             buildCatalogConditions({
-                category: 'mugs',
+                category: 'aires-residenciales',
                 minPrice: 10,
                 maxPrice: 20,
                 tags: ['oferta', 'nuevo'],
             }),
         ).toEqual([
             ACTIVE,
-            { clause: 'product.categorySlug = :category', params: { category: 'mugs' } },
+            {
+                clause: 'product.categorySlug = :category',
+                params: { category: 'aires-residenciales' },
+            },
             { clause: 'product.price >= :minPrice', params: { minPrice: 10 } },
             { clause: 'product.price <= :maxPrice', params: { maxPrice: 20 } },
             {
@@ -37,9 +40,9 @@ describe('buildCatalogConditions', () => {
     })
 
     it('splits the search into accent-insensitive AND terms', () => {
-        expect(buildCatalogConditions({ search: '  Mamá   JEFA ' }).slice(1)).toEqual([
-            { clause: 'product.searchText LIKE :search0', params: { search0: '%mama%' } },
-            { clause: 'product.searchText LIKE :search1', params: { search1: '%jefa%' } },
+        expect(buildCatalogConditions({ search: '  Calefacción   INVERTER ' }).slice(1)).toEqual([
+            { clause: 'product.searchText LIKE :search0', params: { search0: '%calefaccion%' } },
+            { clause: 'product.searchText LIKE :search1', params: { search1: '%inverter%' } },
         ])
     })
 
@@ -51,12 +54,42 @@ describe('buildCatalogConditions', () => {
 
     it('never interpolates user input into the SQL clause', () => {
         const conditions = buildCatalogConditions({
-            category: "mugs' OR 1=1 --",
+            category: "aires' OR 1=1 --",
             search: "'; DROP TABLE products; --",
         })
         for (const { clause } of conditions) {
             expect(clause).not.toMatch(/DROP|OR 1=1/)
         }
+    })
+
+    it('maps brands, availability, BTU range, voltage and inverter (case-insensitive text)', () => {
+        expect(
+            buildCatalogConditions({
+                brand: ['Daikin', 'LG'],
+                availability: 'IN_STOCK',
+                btuMin: 9000,
+                btuMax: 18000,
+                voltage: '220v',
+                inverter: false,
+            }).slice(1),
+        ).toEqual([
+            {
+                clause: 'LOWER(product.brand) IN (:...brands)',
+                params: { brands: ['daikin', 'lg'] },
+            },
+            {
+                clause: 'product.stockMode = :inStock AND product.stock > 0',
+                params: { inStock: 'STOCK' },
+            },
+            { clause: 'product.btu >= :btuMin', params: { btuMin: 9000 } },
+            { clause: 'product.btu <= :btuMax', params: { btuMax: 18000 } },
+            { clause: 'LOWER(product.voltage) = :voltage', params: { voltage: '220v' } },
+            { clause: 'product.isInverter = :inverter', params: { inverter: false } },
+        ])
+        expect(buildCatalogConditions({ availability: 'ON_ORDER' })[1]).toEqual({
+            clause: 'product.stockMode = :onOrder',
+            params: { onOrder: 'ON_ORDER' },
+        })
     })
 
     it('ignores a blank search', () => {
@@ -65,7 +98,7 @@ describe('buildCatalogConditions', () => {
 })
 
 describe('CATALOG_ORDER_BY', () => {
-    it('mirrors the frontend mock comparators with a stable tie-breaker', () => {
+    it('sorts by relevance, price or date with a stable tie-breaker', () => {
         expect(CATALOG_ORDER_BY.relevance).toEqual([
             ['product.relevanceScore', 'DESC'],
             ['product.createdAt', 'DESC'],
@@ -74,10 +107,6 @@ describe('CATALOG_ORDER_BY', () => {
         expect(CATALOG_ORDER_BY['price-asc'][0]).toEqual(['product.price', 'ASC'])
         expect(CATALOG_ORDER_BY['price-desc'][0]).toEqual(['product.price', 'DESC'])
         expect(CATALOG_ORDER_BY.newest[0]).toEqual(['product.createdAt', 'DESC'])
-    })
-
-    it('has no rating sort: the shop has no reviews', () => {
-        expect(Object.keys(CATALOG_ORDER_BY)).not.toContain('rating')
     })
 })
 
@@ -92,7 +121,7 @@ describe('resolvePageWindow', () => {
         })
     })
 
-    it('clamps out-of-range pages like the mock', () => {
+    it('clamps out-of-range pages', () => {
         expect(resolvePageWindow(30, 99, 12).page).toBe(3)
         expect(resolvePageWindow(0, 5, 12)).toMatchObject({ page: 1, totalPages: 1, skip: 0 })
     })
@@ -102,34 +131,35 @@ describe('derived product fields', () => {
     it('scores bestsellers (+10) and new products (+4) only', () => {
         expect(computeRelevanceScore({ tags: ['bestseller', 'nuevo'] })).toBe(14)
         expect(computeRelevanceScore({ tags: ['bestseller'] })).toBe(10)
-        expect(computeRelevanceScore({ tags: ['nuevo', 'personalizable'] })).toBe(4)
+        expect(computeRelevanceScore({ tags: ['nuevo'] })).toBe(4)
         expect(computeRelevanceScore({ tags: ['oferta'] })).toBe(0)
     })
 
-    it('ignores the legacy rating when scoring', () => {
-        const withRating = { tags: ['bestseller'], rating: 4.9 }
-        expect(computeRelevanceScore(withRating)).toBe(10)
-    })
-
-    it('builds a normalized search haystack including tags', () => {
+    it('builds a normalized search haystack with brand, model, SKU and tags', () => {
         expect(
             computeSearchText({
-                name: 'Taza Café Primero',
-                description: 'Cerámica',
-                printText: '¡Sorpresa!',
+                name: 'Split Inverter 12.000 BTU',
+                brand: 'LG',
+                model: 'S4-Q12JA',
+                sku: 'LG-S4Q12',
+                description: 'Compresor de última generación',
                 tags: ['oferta'],
             }),
-        ).toBe('taza cafe primero ceramica ¡sorpresa! oferta')
+        ).toBe(
+            'split inverter 12.000 btu lg s4-q12ja lg-s4q12 compresor de ultima generacion oferta',
+        )
     })
 
-    it('adds "favorito" for bestsellers, the word the store shows', () => {
+    it('adds "más vendido" for bestsellers, the words the store shows', () => {
         expect(
             computeSearchText({
-                name: 'Taza',
+                name: 'Capacitor',
+                brand: 'Packard',
+                model: null,
+                sku: null,
                 description: '',
-                printText: '',
                 tags: ['bestseller'],
             }),
-        ).toContain('bestseller favorito')
+        ).toContain('bestseller mas vendido')
     })
 })

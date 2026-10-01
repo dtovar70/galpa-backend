@@ -1,44 +1,65 @@
-import { resolveAvailability } from './product-availability.js'
+import {
+    ON_ORDER_AVAILABLE_UNITS,
+    productAvailability,
+    resolveAvailability,
+} from './product-availability.js'
 
 const PRODUCTS = [
-    { id: 'mug', stock: 8, isActive: true },
-    { id: 'key', stock: 3, isActive: true },
-    { id: 'off', stock: 9, isActive: false },
-    { id: 'neg', stock: -2, isActive: true },
+    { id: 'split', stock: 8, stockMode: 'STOCK' as const, isActive: true },
+    { id: 'key', stock: 3, stockMode: 'STOCK' as const, isActive: true },
+    { id: 'off', stock: 9, stockMode: 'STOCK' as const, isActive: false },
+    { id: 'neg', stock: -2, stockMode: 'STOCK' as const, isActive: true },
+    { id: 'ord', stock: 0, stockMode: 'ON_ORDER' as const, isActive: true },
 ]
 const VARIANTS = [
-    { id: 'v-11', productId: 'mug', stock: 3 },
-    { id: 'v-15', productId: 'mug', stock: 5 },
+    { id: 'v-11', productId: 'split', stock: 3 },
+    { id: 'v-15', productId: 'split', stock: 5 },
     { id: 'v-off', productId: 'off', stock: 0 },
 ]
 
 describe('resolveAvailability', () => {
     it('reads the stock of the chosen variant', () => {
         expect(
-            resolveAvailability([{ productId: 'mug', variantId: 'v-15' }], PRODUCTS, VARIANTS),
-        ).toEqual([{ productId: 'mug', variantId: 'v-15', stock: 5, isActive: true, exists: true }])
+            resolveAvailability([{ productId: 'split', variantId: 'v-15' }], PRODUCTS, VARIANTS),
+        ).toEqual([
+            {
+                productId: 'split',
+                variantId: 'v-15',
+                stock: 5,
+                stockMode: 'STOCK',
+                isActive: true,
+                exists: true,
+            },
+        ])
     })
 
     it('reads the product stock when the product has no variants', () => {
         expect(resolveAvailability([{ productId: 'key' }], PRODUCTS, VARIANTS)).toEqual([
-            { productId: 'key', variantId: null, stock: 3, isActive: true, exists: true },
+            {
+                productId: 'key',
+                variantId: null,
+                stock: 3,
+                stockMode: 'STOCK',
+                isActive: true,
+                exists: true,
+            },
         ])
     })
 
     it('keeps the request order and repeats duplicated lines', () => {
         const result = resolveAvailability(
             [
-                { productId: 'mug', variantId: 'v-11' },
+                { productId: 'split', variantId: 'v-11' },
                 { productId: 'key' },
-                { productId: 'mug', variantId: 'v-11' },
+                { productId: 'split', variantId: 'v-11' },
             ],
             PRODUCTS,
             VARIANTS,
         )
         expect(result.map((item) => [item.productId, item.variantId, item.stock])).toEqual([
-            ['mug', 'v-11', 3],
+            ['split', 'v-11', 3],
             ['key', null, 3],
-            ['mug', 'v-11', 3],
+            ['split', 'v-11', 3],
         ])
     })
 
@@ -52,9 +73,9 @@ describe('resolveAvailability', () => {
         const result = resolveAvailability(
             [
                 { productId: 'nope', variantId: 'v-11' },
-                { productId: 'mug', variantId: 'gone' },
+                { productId: 'split', variantId: 'gone' },
                 { productId: 'key', variantId: 'v-11' },
-                { productId: 'mug' },
+                { productId: 'split' },
             ],
             PRODUCTS,
             VARIANTS,
@@ -69,5 +90,21 @@ describe('resolveAvailability', () => {
 
     it('never reports negative stock', () => {
         expect(resolveAvailability([{ productId: 'neg' }], PRODUCTS, [])[0]?.stock).toBe(0)
+    })
+
+    it('treats ON_ORDER products as always available', () => {
+        expect(resolveAvailability([{ productId: 'ord' }], PRODUCTS, [])[0]).toMatchObject({
+            stock: ON_ORDER_AVAILABLE_UNITS,
+            stockMode: 'ON_ORDER',
+            exists: true,
+        })
+    })
+})
+
+describe('productAvailability', () => {
+    it('is IN_STOCK or OUT_OF_STOCK for STOCK products and ON_ORDER otherwise', () => {
+        expect(productAvailability({ stockMode: 'STOCK', stock: 2 })).toBe('IN_STOCK')
+        expect(productAvailability({ stockMode: 'STOCK', stock: 0 })).toBe('OUT_OF_STOCK')
+        expect(productAvailability({ stockMode: 'ON_ORDER', stock: 0 })).toBe('ON_ORDER')
     })
 })

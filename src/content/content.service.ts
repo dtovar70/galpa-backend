@@ -48,6 +48,18 @@ function sameKind(stored: unknown, fallback: unknown): boolean {
     return typeof stored === typeof fallback && stored !== null
 }
 
+/** `stored` over `defaults`, field by field; nested objects (payment methods) are merged too. */
+function mergeObject(defaults: Record<string, unknown>, stored: unknown): Record<string, unknown> {
+    const merged = structuredClone(defaults)
+    if (!isPlainObject(stored)) return merged
+    for (const [field, fallback] of Object.entries(defaults)) {
+        const value = stored[field]
+        if (value === undefined || !sameKind(value, fallback)) continue
+        merged[field] = isPlainObject(fallback) ? mergeObject(fallback, value) : value
+    }
+    return merged
+}
+
 /**
  * Stored values over the defaults, field by field. Unknown fields are dropped and fields of the
  * wrong kind fall back to the default, so an older or hand-edited row can never break the site.
@@ -56,15 +68,8 @@ export function mergeSection<K extends ContentSection>(
     section: K,
     stored: unknown,
 ): SiteContent[K] {
-    const defaults = DEFAULT_SITE_CONTENT[section]
-    if (!isPlainObject(stored)) return structuredClone(defaults)
-
-    const merged = structuredClone(defaults) as unknown as Record<string, unknown>
-    for (const [field, fallback] of Object.entries(defaults)) {
-        const value = stored[field]
-        if (value !== undefined && sameKind(value, fallback)) merged[field] = value
-    }
-    return merged as unknown as SiteContent[K]
+    const defaults = DEFAULT_SITE_CONTENT[section] as unknown as Record<string, unknown>
+    return mergeObject(defaults, stored) as unknown as SiteContent[K]
 }
 
 @Injectable()
@@ -134,10 +139,11 @@ export class ContentService {
     }
 
     /**
-     * Fields that must match a catalog, after the DTO: the Pago Móvil bank must be an active bank
-     * of `banks` (its name is taken from the catalog, so the details the customer copies always
-     * match the bank list), and the Pago Móvil phone and the contact WhatsApp need an active
-     * operator code of `mobile_prefixes`. All problems are reported together.
+     * Fields that must match a catalog, after the DTO: the Pago Móvil and transfer banks must be
+     * active banks of `banks` (their names are taken from the catalog, so the details the customer
+     * copies always match the bank list), and the Pago Móvil phone and the contact WhatsApp need
+     * an active operator code of `mobile_prefixes`. Empty details of a disabled method are not
+     * checked. All problems are reported together.
      */
     private async checkCatalogFields(section: ContentSection, dto: object): Promise<void> {
         const details: { field: string; errors: string[] }[] = []
@@ -148,10 +154,26 @@ export class ContentService {
 
         if (section === 'payment') {
             const payment = dto as PaymentContent
-            const bank = await this.banks.findActive(payment.bankCode)
-            if (bank) payment.bankName = bank.name
-            else details.push({ field: 'bankCode', errors: ['Elige un banco de la lista.'] })
-            await checkPhone('phone', payment.phone)
+            for (const [key, account] of [
+                ['pagoMovil', payment.pagoMovil],
+                ['transfer', payment.transfer],
+            ] as const) {
+                if (!account.enabled && account.bankCode === '') {
+                    account.bankName = ''
+                    continue
+                }
+                const bank = await this.banks.findActive(account.bankCode)
+                if (bank) account.bankName = bank.name
+                else {
+                    details.push({
+                        field: `${key}.bankCode`,
+                        errors: ['Elige un banco de la lista.'],
+                    })
+                }
+            }
+            if (payment.pagoMovil.enabled || payment.pagoMovil.phone !== '') {
+                await checkPhone('pagoMovil.phone', payment.pagoMovil.phone)
+            }
         }
         if (section === 'contact') await checkPhone('whatsapp', (dto as ContactContent).whatsapp)
 

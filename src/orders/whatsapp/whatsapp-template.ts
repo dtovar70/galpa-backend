@@ -2,18 +2,20 @@ import { RECEIPT_STATUSES, type OrderStatus } from '../order-status.js'
 
 /**
  * Placeholders of the WhatsApp message templates (`order_statuses.whatsapp_template`), filled in
- * by `renderWhatsAppTemplate`. Mirrored in frontend-cups/src/views/admin/catalogs/utils/whatsappTemplate.ts
+ * by `renderWhatsAppTemplate`. Mirrored in frontend-galpa/src/views/admin/catalogs/utils/whatsappTemplate.ts
  * (list, descriptions and the preview's sample data): keep both in sync.
  */
 export const WHATSAPP_PLACEHOLDERS = [
     /** The customer's first name. */
     'nombre',
-    /** The order code, "MR-000123". */
+    /** The order code, "GP-000123". */
     'pedido',
     /** A fresh private link to the customer's order page. */
     'enlace',
-    /** "$36,00 (Bs. 30.760,69)". */
+    /** "$360,00 (Bs. 307.606,90)" for bolívar methods, "$360,00" for Zelle and Binance. */
     'total',
+    /** The order's payment method: "Pago Móvil", "Zelle"… */
+    'metodo',
     /** Note of the latest move into the current status (rejection or cancellation reason). */
     'motivo',
     /** Brand name (content `general`). */
@@ -121,28 +123,30 @@ export function whatsAppUrl(phone: string, text: string): string {
 }
 
 /**
- * The templates seeded by the migration, one per status. Warm and short; the owner edits them in
- * Catálogos → Estados de pedido.
+ * The templates seeded by the InitialSchema migration, one per status. Warm and short; the owner
+ * edits them in Catálogos → Estados de pedido.
  */
 export const DEFAULT_WHATSAPP_TEMPLATES: Record<OrderStatus, string> = {
     PENDIENTE_PAGO:
-        '¡Hola {nombre}! 🐾 Gracias por tu pedido {pedido} en {marca}. Te recordamos que el total es {total}. Puedes pagar por Pago Móvil y subir tu comprobante aquí: {enlace}',
+        '¡Hola {nombre}! Gracias por tu pedido {pedido} en {marca}. El total es {total} y elegiste pagar por {metodo}. Puedes pagar y subir tu comprobante aquí: {enlace}',
     PENDIENTE_VERIFICACION:
-        '¡Hola {nombre}! 🙌 Recibimos el comprobante de tu pedido {pedido} y lo estamos verificando. Te avisamos apenas lo confirmemos. Puedes ver el estado aquí: {enlace}',
+        '¡Hola {nombre}! Recibimos el comprobante de tu pedido {pedido} y lo estamos verificando. Te avisamos apenas lo confirmemos. Puedes ver el estado aquí: {enlace}',
     PAGO_VERIFICADO:
-        '¡Hola {nombre}! ✅ Confirmamos tu pago del pedido {pedido}. Ya estamos preparando tu pieza. Tu comprobante: {comprobante} · Sigue tu pedido: {enlace}',
+        '¡Hola {nombre}! ✅ Confirmamos tu pago del pedido {pedido}. Ya estamos trabajando en él. Tu comprobante: {comprobante} · Sigue tu pedido: {enlace}',
     PAGO_RECHAZADO:
-        'Hola {nombre} 👋 Revisamos el pago de tu pedido {pedido} y no pudimos aprobarlo: {motivo}. Puedes subir un nuevo comprobante aquí: {enlace}',
-    EN_PRODUCCION:
-        '¡Hola {nombre}! 🎨 Tu pedido {pedido} ya está en el taller y lo estamos personalizando con mucho cariño. Síguelo aquí: {enlace}',
-    LISTO_PARA_ENTREGA:
-        '¡Hola {nombre}! 🎉 Tu pedido {pedido} está listo. Muy pronto coordinamos la entrega contigo. Detalles: {enlace}',
-    ENVIADO:
+        'Hola {nombre}. Revisamos el pago de tu pedido {pedido} y no pudimos aprobarlo: {motivo}. Puedes subir un nuevo comprobante aquí: {enlace}',
+    ESPERANDO_MERCANCIA:
+        '¡Hola {nombre}! Tu equipo del pedido {pedido} viene en camino a nuestro almacén. Te avisamos apenas llegue. Síguelo aquí: {enlace}',
+    EN_PREPARACION:
+        '¡Hola {nombre}! Estamos preparando tu pedido {pedido}. Muy pronto te confirmamos la entrega. Detalles: {enlace}',
+    LISTO_PARA_RETIRO:
+        '¡Hola {nombre}! Tu pedido {pedido} está listo para retirar en nuestra tienda. Trae tu número de pedido y tu cédula. Detalles: {enlace}',
+    DESPACHADO:
         '¡Hola {nombre}! 🚚 Tu pedido {pedido} ya va en camino. Datos del envío: {envio}. Síguelo aquí: {enlace}',
     ENTREGADO:
-        '¡Hola {nombre}! 💛 Tu pedido {pedido} ya fue entregado. Gracias por confiar en {marca}, ¡esperamos que lo disfrutes mucho! Tu comprobante: {comprobante}',
+        '¡Hola {nombre}! Tu pedido {pedido} ya fue entregado. Gracias por confiar en {marca}. Si necesitas instalación o mantenimiento, escríbenos. Tu comprobante: {comprobante}',
     CANCELADO:
-        'Hola {nombre}. Te escribimos por tu pedido {pedido}: lo cancelamos ({motivo}). Si hiciste un pago o tienes alguna duda, respóndenos por aquí y lo resolvemos juntos.',
+        'Hola {nombre}. Te escribimos por tu pedido {pedido}: lo cancelamos ({motivo}). Si hiciste un pago o tienes alguna duda, respóndenos por aquí y lo resolvemos.',
     EXPIRADO:
-        'Hola {nombre} 👋 El plazo para pagar tu pedido {pedido} venció. Si ya hiciste el pago, súbelo aquí y lo verificamos: {enlace}',
+        'Hola {nombre}. El plazo para pagar tu pedido {pedido} venció. Si ya hiciste el pago, súbelo aquí y lo verificamos: {enlace}',
 }

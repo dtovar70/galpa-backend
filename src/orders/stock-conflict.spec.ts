@@ -4,9 +4,9 @@ import type { LockedStock } from '../products/product-stock.js'
 import type { StockConflict, StockConflictLine } from './entities/order.entity.js'
 import { liveStockConflict, stockConflictProductIds } from './stock-conflict.js'
 
-function stock(mint: number, keychain = 0): LockedStock {
+function stock(mint: number, plainStock = 0): LockedStock {
     const acrylic = { id: 'key', stock: mint } as Product
-    const plain = { id: 'plain', stock: keychain } as Product
+    const plain = { id: 'plain', stock: plainStock } as Product
     return {
         products: new Map([
             [acrylic.id, acrylic],
@@ -24,7 +24,7 @@ function conflict(lines: Partial<StockConflictLine>[], resolvedAt: string | null
         lines: lines.map((line) => ({
             productId: 'key',
             variantId: 'key-mint',
-            productName: 'Llavero acrílico',
+            productName: 'Control remoto universal',
             variantLabel: 'Menta',
             requested: 1,
             available: 0,

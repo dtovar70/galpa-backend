@@ -1,6 +1,6 @@
 import type { ObjectLiteral, SelectQueryBuilder } from 'typeorm'
 import { normalizeText } from '../common/utils/text.util.js'
-import type { ProductTag, SortOption } from './products.constants.js'
+import type { AvailabilityFilter, ProductTag, SortOption } from './products.constants.js'
 
 /** Query alias used for the `Product` entity in every catalog query. */
 export const PRODUCT_ALIAS = 'product'
@@ -11,6 +11,13 @@ export interface CatalogFilters {
     minPrice?: number
     maxPrice?: number
     tags?: ProductTag[]
+    /** Any of these brands (exact, case-insensitive). */
+    brand?: string[]
+    availability?: AvailabilityFilter
+    btuMin?: number
+    btuMax?: number
+    voltage?: string
+    inverter?: boolean
 }
 
 /** A parameterized WHERE fragment. User input only ever travels in `params`. */
@@ -26,7 +33,7 @@ function escapeLike(value: string): string {
     return value.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 
-/** Every search term must appear in the normalized haystack (AND semantics, like the mock). */
+/** Every search term must appear in the normalized haystack (AND semantics). */
 export function buildSearchConditions(search?: string): Condition[] {
     if (!search) return []
     return normalizeText(search)
@@ -68,12 +75,53 @@ export function buildCatalogConditions(filters: CatalogFilters): Condition[] {
             params: { tags: filters.tags },
         })
     }
+    if (filters.brand?.length) {
+        conditions.push({
+            clause: `LOWER(${PRODUCT_ALIAS}.brand) IN (:...brands)`,
+            params: { brands: filters.brand.map((brand) => brand.toLowerCase()) },
+        })
+    }
+    if (filters.availability === 'ON_ORDER') {
+        conditions.push({
+            clause: `${PRODUCT_ALIAS}.stockMode = :onOrder`,
+            params: { onOrder: 'ON_ORDER' },
+        })
+    } else if (filters.availability === 'IN_STOCK') {
+        conditions.push({
+            clause: `${PRODUCT_ALIAS}.stockMode = :inStock AND ${PRODUCT_ALIAS}.stock > 0`,
+            params: { inStock: 'STOCK' },
+        })
+    }
+    if (filters.btuMin !== undefined) {
+        conditions.push({
+            clause: `${PRODUCT_ALIAS}.btu >= :btuMin`,
+            params: { btuMin: filters.btuMin },
+        })
+    }
+    if (filters.btuMax !== undefined) {
+        conditions.push({
+            clause: `${PRODUCT_ALIAS}.btu <= :btuMax`,
+            params: { btuMax: filters.btuMax },
+        })
+    }
+    if (filters.voltage) {
+        conditions.push({
+            clause: `LOWER(${PRODUCT_ALIAS}.voltage) = :voltage`,
+            params: { voltage: filters.voltage.toLowerCase() },
+        })
+    }
+    if (filters.inverter !== undefined) {
+        conditions.push({
+            clause: `${PRODUCT_ALIAS}.isInverter = :inverter`,
+            params: { inverter: filters.inverter },
+        })
+    }
 
     return [...conditions, ...buildSearchConditions(filters.search)]
 }
 
 /**
- * Mirrors the comparators in the frontend mock; `id` is the final deterministic tie-breaker.
+ * Catalog sorts; `id` is the final deterministic tie-breaker.
  * Relevance ties (same tags) show the newest product first.
  */
 export const CATALOG_ORDER_BY: Record<SortOption, OrderBy> = {
@@ -122,7 +170,7 @@ export interface PageWindow {
     skip: number
 }
 
-/** Same clamping as the mock: out-of-range pages snap to the nearest valid page. */
+/** Out-of-range pages snap to the nearest valid page. */
 export function resolvePageWindow(total: number, page: number, pageSize: number): PageWindow {
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
     const safePage = Math.min(Math.max(1, page), totalPages)

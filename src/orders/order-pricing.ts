@@ -50,29 +50,37 @@ export interface PricedLineInput {
 
 export interface OrderTotals {
     subtotalUsd: number
+    discountUsd: number
     shippingUsd: number
     totalUsd: number
     totalBs: number
 }
 
+/**
+ * `discountCents` (orders converted from a quote) comes off the subtotal, never below 0, before
+ * the shipping rules are applied.
+ */
 export function computeTotals(
     lines: readonly PricedLineInput[],
     method: DeliveryMethod,
     rules: ShippingRules,
     rate: number,
+    discountCents = 0,
 ): OrderTotals {
     const subtotal = lines.reduce((sum, line) => sum + line.unitCents * line.quantity, 0)
-    const shipping = shippingCents(subtotal, method, rules)
-    const totalUsd = fromCents(subtotal + shipping)
+    const discount = Math.min(Math.max(0, discountCents), subtotal)
+    const shipping = shippingCents(subtotal - discount, method, rules)
+    const totalUsd = fromCents(subtotal - discount + shipping)
     return {
         subtotalUsd: fromCents(subtotal),
+        discountUsd: fromCents(discount),
         shippingUsd: fromCents(shipping),
         totalUsd,
         totalBs: bolivarsFromUsd(totalUsd, rate),
     }
 }
 
-/** Paid minus expected, in bolívares with 2 decimals (0 when they match to the cent). */
-export function amountDifferenceBs(paidBs: number, expectedBs: number): number {
-    return (toCents(paidBs) - toCents(expectedBs)) / 100
+/** Paid minus expected, with 2 decimals (0 when they match to the cent); any currency. */
+export function amountDifference(paid: number, expected: number): number {
+    return (toCents(paid) - toCents(expected)) / 100
 }

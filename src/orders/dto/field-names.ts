@@ -1,3 +1,4 @@
+import type { PaymentMethod } from '../../common/payment-methods.js'
 import { feminine, masculine } from '../../common/validation/messages.js'
 import { ID_NUMBER_PATTERN, VE_MOBILE_PATTERN } from '../../common/validation/ve-formats.js'
 
@@ -14,14 +15,19 @@ export const ORDER_FIELD = {
     productId: masculine('El producto'),
     variantId: feminine('La variante'),
     quantity: feminine('La cantidad'),
-    personalization: masculine('El texto personalizado'),
-    designId: masculine('El diseño'),
+    paymentMethod: masculine('El método de pago'),
+    wantsInstallation: feminine('La solicitud de instalación'),
+    customerIdNumber: feminine('La cédula o RIF'),
+    method: masculine('El método de pago'),
     reference: feminine('La referencia'),
     payerBankCode: masculine('El banco'),
     payerPhone: masculine('El teléfono del pago'),
     payerIdNumber: feminine('La cédula del titular'),
     paidOn: feminine('La fecha del pago'),
     amountBs: masculine('El monto pagado'),
+    amountUsd: masculine('El monto pagado en dólares'),
+    payerName: masculine('El nombre del titular'),
+    payerAccount: feminine('La cuenta desde la que pagaste'),
     reason: masculine('El motivo'),
     note: feminine('La nota'),
     status: masculine('El estado'),
@@ -41,7 +47,6 @@ export const ORDER_LIMITS = {
     notes: 300,
     items: 50,
     quantity: 99,
-    personalization: 140,
     reason: 500,
     note: 1000,
     search: 100,
@@ -55,13 +60,34 @@ export const ORDER_LIMITS = {
 export const CUSTOMER_PHONE_PATTERN = VE_MOBILE_PATTERN
 /** Pago Móvil phone: "0412-5550134" (same rule as the checkout phone). */
 export const PAYER_PHONE_PATTERN = VE_MOBILE_PATTERN
-/** Cédula or RIF of the payer: "V-12345678", "J-123456789". */
+/** Cédula or RIF of the payer or the customer: "V-12345678", "J-123456789". */
 export const PAYER_ID_PATTERN = ID_NUMBER_PATTERN
-/**
- * Pago Móvil reference: its last 6 digits (the full number is long and error-prone to copy).
- * Payments stored before this rule keep their longer reference.
- */
-export const REFERENCE_DIGITS = 6
-export const REFERENCE_PATTERN = /^\d{6}$/
-export const ORDER_CODE_PATTERN = /^MR-\d{6,}$/
+
+/** Format of the payment reference per method (after dropping spaces, dots and dashes). */
+export const REFERENCE_RULES: Record<PaymentMethod, { pattern: RegExp; message: string }> = {
+    PAGO_MOVIL: {
+        pattern: /^\d{4,12}$/,
+        message: 'La referencia del Pago Móvil debe tener entre 4 y 12 dígitos.',
+    },
+    TRANSFERENCIA: {
+        pattern: /^\d{4,20}$/,
+        message: 'La referencia de la transferencia debe tener entre 4 y 20 dígitos.',
+    },
+    ZELLE: {
+        pattern: /^[A-Z0-9]{4,40}$/,
+        message: 'La confirmación de Zelle debe tener entre 4 y 40 letras o números.',
+    },
+    BINANCE: {
+        pattern: /^[A-Z0-9]{4,64}$/,
+        message: 'El ID de la orden de Binance debe tener entre 4 y 64 letras o números.',
+    },
+}
+
+/** Zelle account: an email or a phone number ("+1 305 555 0134"). */
+export const ZELLE_ACCOUNT_PATTERN = /^(?:[^\s@]+@[^\s@]+\.[^\s@]+|\+?[\d\s()-]{7,20})$/
+/** Binance account: an email or a Pay ID. */
+export const BINANCE_ACCOUNT_PATTERN = /^(?:[^\s@]+@[^\s@]+\.[^\s@]+|[A-Za-z0-9]{4,64})$/
+
+export const ORDER_CODE_PATTERN = /^GP-\d{6,}$/
 export const MAX_AMOUNT_BS = 9_999_999_999.99
+export const MAX_AMOUNT_USD = 99_999_999.99

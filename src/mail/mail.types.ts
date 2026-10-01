@@ -1,11 +1,21 @@
 import type { MailDriver } from '../config/env.schema.js'
 
-/** One email, ready to go: an HTML body and its plain-text alternative. */
+/** A file sent with an email (e.g. a quote PDF). */
+export interface MailAttachment {
+    filename: string
+    content: Buffer
+    contentType: string
+}
+
+/** One email, ready to go: an HTML body, its plain-text alternative and optional files. */
 export interface OutgoingMail {
     to: string
     subject: string
     html: string
     text: string
+    /** Overrides MAIL_REPLY_TO (e.g. the customer who wrote the contact form). */
+    replyTo?: string
+    attachments?: MailAttachment[]
 }
 
 /** What a transport needs besides the message (from MAIL_FROM / MAIL_REPLY_TO). */

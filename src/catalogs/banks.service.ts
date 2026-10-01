@@ -17,19 +17,19 @@ export const BANK_ORDER_MISMATCH =
 /** Sub-route of `admin/catalogs/banks` used to reorder ("order" is never a four-digit code). */
 export const BANK_ORDER_ROUTE = 'order'
 
-/** Matches `Bank` in frontend-cups/src/@types/catalog.ts. */
+/** Matches `Bank` in frontend-galpa/src/@types/catalog.ts. */
 export interface BankDto {
     code: string
     name: string
 }
 
-/** Matches `AdminBank` in frontend-cups/src/@types/catalog.ts. */
+/** Matches `AdminBank` in frontend-galpa/src/@types/catalog.ts. */
 export interface AdminBankDto extends BankDto {
     isActive: boolean
     sortOrder: number
     /** Payment proofs that name this bank. */
     paymentCount: number
-    /** The Pago Móvil details of the store use this bank. */
+    /** The store's Pago Móvil or transfer details use this bank. */
     usedByPaymentContent: boolean
 }
 
@@ -50,7 +50,7 @@ export function bankInUseMessage(usage: BankUsage): string | null {
             : usage.paymentCount > 1
               ? `lo usan ${usage.paymentCount} pagos registrados`
               : '',
-        usage.usedByPaymentContent ? 'es el banco de tus datos de Pago Móvil' : '',
+        usage.usedByPaymentContent ? 'es el banco de tus datos de pago' : '',
     ].filter(Boolean)
     if (!reasons.length) return null
     return `No puedes eliminar este banco porque ${reasons.join(' y ')}. Desactívalo para ocultarlo.`
@@ -78,7 +78,7 @@ export class BanksService {
     }
 
     /**
-     * The active bank with this code, or null. Payments and the Pago Móvil content only accept
+     * The active bank with this code, or null. Payments and the payment content only accept
      * active banks.
      */
     async findActive(code: string): Promise<Bank | null> {
@@ -158,7 +158,10 @@ export class BanksService {
         if (message) throw new ConflictException(message)
     }
 
-    /** Payment proofs per bank code and the bank of the Pago Móvil content (one or all codes). */
+    /**
+     * Payment proofs per bank code and the banks of the store's Pago Móvil and transfer details
+     * (one or all codes).
+     */
     private async usage(code?: string): Promise<(code: string) => BankUsage> {
         const [payments, content] = await Promise.all([
             this.banks.query<{ code: string; count: string }[]>(
@@ -167,15 +170,19 @@ export class BanksService {
                  GROUP BY "payer_bank_code"`,
                 code ? [code] : [],
             ),
-            this.banks.query<{ code: string | null }[]>(
-                `SELECT "value"->>'bankCode' AS "code" FROM "site_content" WHERE "key" = 'payment'`,
+            this.banks.query<{ pagoMovil: string | null; transfer: string | null }[]>(
+                `SELECT "value"->'pagoMovil'->>'bankCode' AS "pagoMovil",
+                        "value"->'transfer'->>'bankCode' AS "transfer"
+                 FROM "site_content" WHERE "key" = 'payment'`,
             ),
         ])
         const counts = new Map(payments.map((row) => [row.code, Number(row.count)]))
-        const contentCode = content[0]?.code ?? null
+        const contentCodes = new Set(
+            [content[0]?.pagoMovil, content[0]?.transfer].filter((value) => value),
+        )
         return (bankCode) => ({
             paymentCount: counts.get(bankCode) ?? 0,
-            usedByPaymentContent: contentCode === bankCode,
+            usedByPaymentContent: contentCodes.has(bankCode),
         })
     }
 

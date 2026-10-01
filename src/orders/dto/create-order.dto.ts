@@ -3,6 +3,7 @@ import {
     ArrayMaxSize,
     ArrayMinSize,
     IsArray,
+    IsBoolean,
     IsEmail,
     IsIn,
     IsInt,
@@ -16,12 +17,15 @@ import {
     MinLength,
     ValidateNested,
 } from 'class-validator'
+import { PAYMENT_METHODS, type PaymentMethod } from '../../common/payment-methods.js'
 import { msg } from '../../common/validation/messages.js'
 import { MaxInputLength } from '../../common/validation/text-limits.js'
+import { ID_NUMBER_MESSAGE } from '../../common/validation/ve-formats.js'
 import {
     CUSTOMER_PHONE_PATTERN,
     ORDER_FIELD as FIELD,
     ORDER_LIMITS as LIMITS,
+    PAYER_ID_PATTERN,
 } from './field-names.js'
 
 const trim = ({ value }: TransformFnParams): unknown =>
@@ -31,6 +35,12 @@ const trim = ({ value }: TransformFnParams): unknown =>
 const trimOrUndefined = ({ value }: TransformFnParams): unknown => {
     if (typeof value !== 'string') return value
     const trimmed = value.trim()
+    return trimmed === '' ? undefined : trimmed
+}
+
+const trimUpperOrUndefined = ({ value }: TransformFnParams): unknown => {
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim().toUpperCase()
     return trimmed === '' ? undefined : trimmed
 }
 
@@ -57,21 +67,6 @@ export class OrderItemInputDto {
     @Min(1, { message: msg.min(FIELD.quantity, 1) })
     @Max(LIMITS.quantity, { message: msg.max(FIELD.quantity, LIMITS.quantity) })
     quantity: number
-
-    @IsOptional()
-    @Transform(trimOrUndefined)
-    @IsString({ message: msg.text(FIELD.personalization) })
-    @MaxLength(LIMITS.personalization, {
-        message: msg.maxLength(FIELD.personalization, LIMITS.personalization),
-    })
-    personalization?: string
-
-    /** The customer's own image for this line (`POST /designs`); used once, by one line. */
-    @IsOptional()
-    @Transform(trimOrUndefined)
-    @IsString({ message: msg.text(FIELD.designId) })
-    @MaxLength(80, { message: msg.maxLength(FIELD.designId, 80) })
-    designId?: string
 }
 
 /** Body of `POST /orders`: the checkout form plus the cart lines. */
@@ -96,6 +91,14 @@ export class CreateOrderDto {
     })
     phone: string
 
+    /** Cédula or RIF for the invoice; optional. */
+    @IsOptional()
+    @Transform(trimUpperOrUndefined)
+    @IsString({ message: msg.text(FIELD.customerIdNumber) })
+    @MaxInputLength(FIELD.customerIdNumber)
+    @Matches(PAYER_ID_PATTERN, { message: ID_NUMBER_MESSAGE })
+    customerIdNumber?: string
+
     @Transform(trim)
     @IsString({ message: msg.text(FIELD.city) })
     @MinLength(LIMITS.city.min, { message: 'Escribe tu ciudad.' })
@@ -116,6 +119,15 @@ export class CreateOrderDto {
 
     @IsIn(DELIVERY_METHODS, { message: msg.invalid(FIELD.deliveryMethod) })
     deliveryMethod: (typeof DELIVERY_METHODS)[number]
+
+    /** Must be one of the methods the store has configured (checked by the service). */
+    @IsIn(PAYMENT_METHODS, { message: msg.invalid(FIELD.paymentMethod) })
+    paymentMethod: PaymentMethod
+
+    /** The customer wants to be contacted about installation (false when omitted). */
+    @IsOptional()
+    @IsBoolean({ message: msg.boolean(FIELD.wantsInstallation) })
+    wantsInstallation?: boolean
 
     @IsArray({ message: msg.list(FIELD.items) })
     @ArrayMinSize(1, { message: 'Tu carrito está vacío.' })

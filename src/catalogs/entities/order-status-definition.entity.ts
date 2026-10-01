@@ -48,7 +48,7 @@ export class OrderStatusDefinition {
     })
     customerTitle: string | null
 
-    /** Body of that message; may use `{produccion}` and `{marca}`. */
+    /** Body of that message; may use `{despacho}` and `{marca}`. */
     @Column({
         name: 'customer_description',
         type: 'varchar',

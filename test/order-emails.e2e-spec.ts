@@ -8,6 +8,8 @@ import { createValidationPipe } from '../src/common/pipes/validation.pipe.js'
 import { MAIL_TRANSPORT, type MailTransport, type OutgoingMail } from '../src/mail/mail.types.js'
 import { OrderLookupService } from '../src/orders/emails/order-lookup.service.js'
 import { OrderAccessLink } from '../src/orders/entities/order-access-link.entity.js'
+import { Order } from '../src/orders/entities/order.entity.js'
+import { OrderStatusService } from '../src/orders/order-status.service.js'
 import { STORAGE_SERVICE, type StorageService } from '../src/storage/storage.service.js'
 import { FakeDb, type Row } from './fixtures/fake-orders-db.js'
 
@@ -60,16 +62,10 @@ describe('Customer emails: "Pedido recibido" and "Consultar mi pedido" (e2e)', (
                     phone: '0414-1234567',
                     city: 'Caracas',
                     address: 'Av. Principal, casa 4',
-                    notes: '',
                     deliveryMethod: 'delivery',
-                    items: [
-                        {
-                            productId: 'mug-001',
-                            variantId: 'v-15oz',
-                            quantity: 2,
-                            personalization: 'Ñandú <3',
-                        },
-                    ],
+                    paymentMethod: 'PAGO_MOVIL',
+                    notes: 'Portón <3>',
+                    items: [{ productId: 'split-001', variantId: 'v-220v', quantity: 2 }],
                     ...overrides,
                 })
                 .expect(201)
@@ -121,11 +117,11 @@ describe('Customer emails: "Pedido recibido" and "Consultar mi pedido" (e2e)', (
             expect(email!.to).toBe('ana@example.com')
             expect(email!.subject).toBe(`Recibimos tu pedido ${order.code}`)
             expect(email!.text).toContain('¡GRACIAS POR TU PEDIDO, ANA!')
-            expect(email!.text).toContain('Taza Café Primero · 15 oz — $32,00')
-            expect(email!.text).toContain('Personalización: “Ñandú <3”')
+            expect(email!.text).toContain('Split Inverter 12.000 BTU · 220V — $32,00')
+            expect(email!.text).toContain('LG · S4-Q12JA')
+            expect(email!.text).toContain('Datos para tu pago por Pago Móvil')
             expect(email!.text).toContain('Banco: 0134 - Banesco')
             expect(email!.text).toContain('Dirección: Av. Principal, casa 4, Caracas')
-            expect(email!.html).toContain('Ñandú &lt;3')
 
             const { url, token } = linkOf(email!)
             expect(url).toContain(`/pedido/${order.code}?t=`)
@@ -152,6 +148,38 @@ describe('Customer emails: "Pedido recibido" and "Consultar mi pedido" (e2e)', (
             await settle()
             expect(mail.sent).toHaveLength(0)
             expect(db.table(OrderAccessLink)).toHaveLength(1)
+        })
+    })
+
+    describe('status changes', () => {
+        it('emails the customer when the payment is approved or rejected, with a fresh link', async () => {
+            const order = await createOrder()
+            await emails(1)
+            mail.sent = []
+            const statuses = app.get(OrderStatusService)
+            // Straight to the transitions: the payment form is covered by orders.e2e-spec.
+            const stored = db.table(Order).find((row) => row.code === order.code)!
+            stored.status = 'PENDIENTE_VERIFICACION'
+            await statuses.transition(
+                order.code,
+                'PAGO_RECHAZADO',
+                { kind: 'telegram' },
+                'Monto incompleto',
+            )
+
+            const [rejected] = await emails(1)
+            expect(rejected!.to).toBe('ana@example.com')
+            expect(rejected!.subject).toBe(`Necesitamos revisar tu pago · ${order.code}`)
+            expect(rejected!.text).toContain('Motivo: Monto incompleto')
+            const { token } = linkOf(rejected!)
+            await http().get(`/api/orders/${order.code}?t=${token}`).expect(200)
+
+            // Internal steps send nothing.
+            mail.sent = []
+            stored.status = 'PAGO_VERIFICADO'
+            await statuses.transition(order.code, 'EN_PREPARACION', { kind: 'telegram' })
+            await settle()
+            expect(mail.sent).toHaveLength(0)
         })
     })
 
@@ -182,7 +210,7 @@ describe('Customer emails: "Pedido recibido" and "Consultar mi pedido" (e2e)', (
             mail.sent = []
 
             const wrongEmail = await lookup(order.code, 'otra@example.com').expect(202)
-            const unknownCode = await lookup('MR-999999', 'ana@example.com').expect(202)
+            const unknownCode = await lookup('GP-999999', 'ana@example.com').expect(202)
             expect(wrongEmail.body).toEqual(LOOKUP_REQUESTED)
             expect(unknownCode.body).toEqual(LOOKUP_REQUESTED)
             await lookups.idle()
@@ -204,21 +232,21 @@ describe('Customer emails: "Pedido recibido" and "Consultar mi pedido" (e2e)', (
             expect(bad.body.details).toEqual([
                 {
                     field: 'code',
-                    errors: ['El código del pedido debe tener el formato MR-000123.'],
+                    errors: ['El código del pedido debe tener el formato GP-000123.'],
                 },
                 {
                     field: 'email',
                     errors: ['El correo debe ser un correo válido, por ejemplo hola@correo.com.'],
                 },
             ])
-            await http().post('/api/orders/lookup').send({ code: 'MR-000001' }).expect(400)
+            await http().post('/api/orders/lookup').send({ code: 'GP-000001' }).expect(400)
         })
 
         it('limits lookups to 3 per email and 3 per code every 15 minutes', async () => {
             for (let index = 0; index < 3; index++) {
-                await lookup(`MR-00000${index + 1}`, 'ana@example.com').expect(202)
+                await lookup(`GP-00000${index + 1}`, 'ana@example.com').expect(202)
             }
-            const limited = await lookup('MR-000009', 'ANA@example.com').expect(429)
+            const limited = await lookup('GP-000009', 'ANA@example.com').expect(429)
             expect(limited.body.message).toBe(
                 'Hiciste muchas consultas seguidas. Espera unos minutos e intenta de nuevo.',
             )
@@ -227,17 +255,17 @@ describe('Customer emails: "Pedido recibido" and "Consultar mi pedido" (e2e)', (
 
         it('limits lookups per code across emails', async () => {
             for (let index = 0; index < 3; index++) {
-                await lookup('MR-000001', `persona${index}@example.com`).expect(202)
+                await lookup('GP-000001', `persona${index}@example.com`).expect(202)
             }
-            await lookup('mr-000001', 'otra@example.com').expect(429)
+            await lookup('gp-000001', 'otra@example.com').expect(429)
             await lookups.idle()
         })
 
         it('limits lookups to 5 per IP every 15 minutes', async () => {
             for (let index = 0; index < 5; index++) {
-                await lookup(`MR-00001${index}`, `persona${index}@example.com`).expect(202)
+                await lookup(`GP-00001${index}`, `persona${index}@example.com`).expect(202)
             }
-            await lookup('MR-000020', 'otra@example.com').expect(429)
+            await lookup('GP-000020', 'otra@example.com').expect(429)
             await lookups.idle()
         })
     })

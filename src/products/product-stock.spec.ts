@@ -5,11 +5,11 @@ import { changeStock, resolveStockUnit, stockItemName, type LockedStock } from '
 
 function locked(): LockedStock {
     const tee = { id: 'tee', stock: 5 } as Product
-    const keychain = { id: 'key', stock: 2 } as Product
+    const remote = { id: 'key', stock: 2 } as Product
     return {
         products: new Map([
             [tee.id, tee],
-            [keychain.id, keychain],
+            [remote.id, remote],
         ]),
         variants: new Map([
             [
@@ -25,8 +25,8 @@ function locked(): LockedStock {
 
 describe('stockItemName', () => {
     it('adds the variant label with an en dash', () => {
-        expect(stockItemName('Franela X', 'Talla M')).toBe('Franela X – Talla M')
-        expect(stockItemName('Llavero', null)).toBe('Llavero')
+        expect(stockItemName('Split X', '220V')).toBe('Split X – 220V')
+        expect(stockItemName('Control remoto', null)).toBe('Control remoto')
     })
 })
 

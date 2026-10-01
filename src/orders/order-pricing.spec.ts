@@ -1,5 +1,5 @@
 import {
-    amountDifferenceBs,
+    amountDifference,
     bolivarsFromUsd,
     computeTotals,
     shippingCents,
@@ -44,21 +44,39 @@ describe('order pricing', () => {
         )
         expect(totals).toEqual({
             subtotalUsd: 34.3,
+            discountUsd: 0,
             shippingUsd: 4,
             totalUsd: 38.3,
             totalBs: 32725.96,
         })
         expect(computeTotals([{ unitCents: 1290, quantity: 2 }], 'pickup', RULES, 100)).toEqual({
             subtotalUsd: 25.8,
+            discountUsd: 0,
             shippingUsd: 0,
             totalUsd: 25.8,
             totalBs: 2580,
         })
     })
 
-    it('reports the difference between the paid and the expected amount', () => {
-        expect(amountDifferenceBs(29906.23, 29906.23)).toBe(0)
-        expect(amountDifferenceBs(29900, 29906.23)).toBe(-6.23)
-        expect(amountDifferenceBs(30000.1, 29906.23)).toBe(93.87)
+    it('takes a quote discount off the subtotal before the shipping rules, never below 0', () => {
+        // 40 - 10 = 30 is under the $35 threshold: the flat rate applies again.
+        expect(
+            computeTotals([{ unitCents: 4000, quantity: 1 }], 'delivery', RULES, 100, 1000),
+        ).toEqual({
+            subtotalUsd: 40,
+            discountUsd: 10,
+            shippingUsd: 4,
+            totalUsd: 34,
+            totalBs: 3400,
+        })
+        expect(
+            computeTotals([{ unitCents: 4000, quantity: 1 }], 'pickup', RULES, 100, 9000),
+        ).toMatchObject({ discountUsd: 40, totalUsd: 0 })
+    })
+
+    it('reports the difference between the paid and the expected amount (any currency)', () => {
+        expect(amountDifference(29906.23, 29906.23)).toBe(0)
+        expect(amountDifference(29900, 29906.23)).toBe(-6.23)
+        expect(amountDifference(30000.1, 29906.23)).toBe(93.87)
     })
 })

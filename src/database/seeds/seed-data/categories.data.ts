@@ -1,32 +1,41 @@
 import type { SeedCategory } from './types.js'
 
-/**
- * Copied from frontend-cups/src/mock/data/categories.data.ts. PALETTE references were
- * resolved to their hex values (blush300, sky300, lilac400). Array order = sortOrder.
- */
+/** The store's categories. Array order = sortOrder. */
 export const categories: SeedCategory[] = [
     {
-        slug: 'mugs',
-        name: 'Tazas',
-        tagline: 'Tu mañana, con tu diseño',
+        slug: 'aires-residenciales',
+        name: 'Aires Residenciales',
+        tagline: 'Confort para cada habitación',
         description:
-            'Cerámica sublimada a 180 °C: el diseño queda fundido en la taza, así que aguanta microondas, lavavajillas y años de café.',
-        colorHex: '#FFB3D1',
+            'Equipos split de pared de 9.000 a 24.000 BTU, convencionales e inverter, para habitaciones, salas y oficinas pequeñas.',
+        colorHex: '#10B981',
+        icon: 'air-vent',
     },
     {
-        slug: 'tees',
-        name: 'Franelas',
-        tagline: 'Se pone y se nota',
+        slug: 'aires-comerciales',
+        name: 'Aires Comerciales',
+        tagline: 'Piso-techo, cassette y ductos',
         description:
-            'Algodón suave con estampado que no se agrieta ni se despega. Cortes unisex, crop y oversize, de la talla S a la XXL.',
-        colorHex: '#A8D8FF',
+            'Capacidad para locales, oficinas y espacios amplios: equipos piso-techo, cassette de cuatro vías y unidades para ductos.',
+        colorHex: '#059669',
+        icon: 'building-2',
     },
     {
-        slug: 'keychains',
-        name: 'Llaveros',
-        tagline: 'El detalle que se lleva puesto',
+        slug: 'repuestos',
+        name: 'Repuestos',
+        tagline: 'Mantén tus equipos funcionando',
         description:
-            'Acrílico, madera o metal con tu nombre, tu foto o tu mascota. El regalo pequeño que siempre termina en las llaves de todos.',
-        colorHex: '#C0AEFF',
+            'Capacitores, compresores, tarjetas electrónicas, motores y controles para las marcas más comunes del mercado.',
+        colorHex: '#38BDF8',
+        icon: 'wrench',
+    },
+    {
+        slug: 'accesorios',
+        name: 'Accesorios e Instalación',
+        tagline: 'Todo para una instalación correcta',
+        description:
+            'Kits de tubería de cobre, gas refrigerante, bases y soportes, bombas de condensado y más materiales de instalación.',
+        colorHex: '#F59E0B',
+        icon: 'package',
     },
 ]

@@ -1,12 +1,11 @@
 import { FindOperator, QueryFailedError } from 'typeorm'
 import { User } from '../../src/auth/entities/user.entity.js'
 import { Role } from '../../src/auth/role.enum.js'
-import { CategoryDesignTemplate } from '../../src/categories/entities/category-design-template.entity.js'
 import { Category } from '../../src/categories/entities/category.entity.js'
 import { caracasDay } from '../../src/common/utils/caracas-date.js'
+import { DEFAULT_SITE_CONTENT } from '../../src/content/content.defaults.js'
+import type { PaymentContent } from '../../src/content/content.types.js'
 import { SiteContentEntry } from '../../src/content/entities/site-content.entity.js'
-import { DesignAsset } from '../../src/designs/entities/design-asset.entity.js'
-import { Design } from '../../src/designs/entities/design.entity.js'
 import { ExchangeRate } from '../../src/exchange-rate/entities/exchange-rate.entity.js'
 import { OrderAccessLink } from '../../src/orders/entities/order-access-link.entity.js'
 import { OrderItem } from '../../src/orders/entities/order-item.entity.js'
@@ -26,13 +25,18 @@ export const USERS = {
     editor: { id: 'editor-1', role: Role.EDITOR, name: 'Editor' },
 }
 
-export const PAGO_MOVIL = {
-    bankCode: '0134',
-    bankName: 'Banesco',
-    phone: '0412-5550134',
-    idNumber: 'V-12345678',
-    holderName: 'Manada Russo',
-    instructions: '',
+/** The store's payment section: Pago Móvil and Zelle offered, transfer and Binance off. */
+export const PAYMENT: PaymentContent = {
+    ...DEFAULT_SITE_CONTENT.payment,
+    pagoMovil: {
+        enabled: true,
+        bankCode: '0134',
+        bankName: 'Banesco',
+        phone: '0412-5550134',
+        idNumber: 'V-12345678',
+        holderName: 'Galpa',
+    },
+    zelle: { enabled: true, email: 'pagos@galpa.com.ve', holderName: 'Galpa LLC' },
 }
 
 export const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
@@ -64,7 +68,6 @@ export class FakeDb {
     private transactionQueue: Promise<unknown> = Promise.resolve()
     tables = new Map<unknown, Row[]>([
         [Category, []],
-        [CategoryDesignTemplate, []],
         [Product, []],
         [ProductVariant, []],
         [ProductImage, []],
@@ -76,95 +79,119 @@ export class FakeDb {
         [OrderAccessLink, []],
         [ExchangeRate, []],
         [SiteContentEntry, []],
-        [Design, []],
-        [DesignAsset, []],
     ])
 
     constructor() {
-        // As after the CategoryDesignTemplates migrations: print sizes, no template photos.
-        const category = (slug: string, widthCm: number | null, heightCm: number | null) => ({
+        const category = (slug: string) => ({
             slug,
             name: slug,
             tagline: '',
             description: '',
-            colorHex: '#FFD979',
+            colorHex: '#10B981',
+            icon: null,
             sortOrder: 0,
-            designPrintWidthCm: widthCm,
-            designPrintHeightCm: heightCm,
         })
         this.table(Category).push(
-            category('mugs', 20, 8.5),
-            category('tees', 25, 30),
-            category('keychains', 5, 5),
-            category('coolers', null, null),
+            category('aires-residenciales'),
+            category('repuestos'),
+            category('accesorios'),
+            category('aires-comerciales'),
         )
+        const product = (fields: Row) => ({
+            model: null,
+            stockMode: 'STOCK',
+            tags: [],
+            ...fields,
+        })
         this.table(Product).push(
-            {
-                id: 'mug-001',
-                slug: 'taza',
-                name: 'Taza Café Primero',
+            product({
+                id: 'split-001',
+                slug: 'split-inverter',
+                name: 'Split Inverter 12.000 BTU',
+                brand: 'LG',
+                model: 'S4-Q12JA',
                 price: 12.9,
                 stock: 8,
                 isActive: true,
-                categorySlug: 'mugs',
-                tags: ['personalizable'],
-            },
-            {
-                id: 'tee-001',
-                slug: 'franela',
-                name: 'Franela',
+                categorySlug: 'aires-residenciales',
+            }),
+            product({
+                id: 'cap-001',
+                slug: 'capacitor-dual',
+                name: 'Capacitor dual',
+                brand: 'Packard',
                 price: 20,
                 stock: 1,
                 isActive: true,
-                categorySlug: 'tees',
-                tags: [],
-            },
-            {
+                categorySlug: 'repuestos',
+            }),
+            product({
                 id: 'off-001',
                 slug: 'oculto',
                 name: 'Oculto',
+                brand: 'Gree',
                 price: 5,
                 stock: 9,
                 isActive: false,
-                categorySlug: 'mugs',
-                tags: ['personalizable'],
-            },
+                categorySlug: 'aires-residenciales',
+            }),
             // No variants: the product row holds its own stock.
-            {
-                id: 'key-001',
-                slug: 'llavero',
-                name: 'Llavero',
+            product({
+                id: 'remote-001',
+                slug: 'control-remoto',
+                name: 'Control remoto',
+                brand: 'Chunghop',
                 price: 4,
                 stock: 3,
                 isActive: true,
-                categorySlug: 'keychains',
-                tags: ['personalizable'],
-            },
+                categorySlug: 'accesorios',
+            }),
+            // "Bajo pedido": no stock limit, never taken nor restored.
+            product({
+                id: 'cassette-001',
+                slug: 'cassette-36000',
+                name: 'Cassette 36.000 BTU',
+                brand: 'LG',
+                model: 'ATNQ36',
+                price: 100,
+                stock: 0,
+                stockMode: 'ON_ORDER',
+                leadTimeDays: 30,
+                isActive: true,
+                categorySlug: 'aires-comerciales',
+            }),
         )
-        // Stock per variant; `products.stock` is their sum (8 for the mug, 1 for the tee).
+        // Stock per variant; `products.stock` is their sum (8 for the split, 1 for the capacitor).
         this.table(ProductVariant).push(
             {
-                id: 'v-11oz',
-                productId: 'mug-001',
-                label: '11 oz',
+                id: 'v-110v',
+                productId: 'split-001',
+                label: '110V',
                 priceDelta: 0,
                 stock: 3,
                 sortOrder: 0,
             },
             {
-                id: 'v-15oz',
-                productId: 'mug-001',
-                label: '15 oz',
+                id: 'v-220v',
+                productId: 'split-001',
+                label: '220V',
                 priceDelta: 3.1,
                 stock: 5,
                 sortOrder: 1,
             },
-            { id: 'v-m', productId: 'tee-001', label: 'M', priceDelta: 0, stock: 1, sortOrder: 0 },
+            {
+                id: 'v-35uf',
+                productId: 'cap-001',
+                label: '35+5 µF',
+                priceDelta: 0,
+                stock: 1,
+                sortOrder: 0,
+            },
         )
         this.table(ProductImage).push({
             id: 'img-1',
-            productId: 'mug-001',
-            url: 'http://img/taza.jpg',
+            productId: 'split-001',
+            url: 'http://img/split.jpg',
             sortOrder: 0,
             createdAt: new Date(),
         })
@@ -178,7 +205,14 @@ export class FakeDb {
             createdById: null,
             createdBy: null,
         })
-        this.table(SiteContentEntry).push({ key: 'payment', value: PAGO_MOVIL })
+        this.table(SiteContentEntry).push(
+            { key: 'payment', value: PAYMENT },
+            // Small amounts keep the test numbers readable: free shipping from $35, else $4.
+            {
+                key: 'shipping',
+                value: { ...DEFAULT_SITE_CONTENT.shipping, freeThreshold: 35, flatRate: 4 },
+            },
+        )
     }
 
     table(entity: unknown): Row[] {
@@ -241,17 +275,9 @@ export class FakeDb {
                     for (const product of this.table(Product)) {
                         const slug = product.categorySlug as string
                         if (params.slug && params.slug !== slug) continue
-                        const row = counts.get(slug) ?? {
-                            slug,
-                            active: 0,
-                            total: 0,
-                            personalizable: 0,
-                        }
+                        const row = counts.get(slug) ?? { slug, active: 0, total: 0 }
                         row.total = (row.total as number) + 1
                         if (product.isActive) row.active = (row.active as number) + 1
-                        if ((product.tags as string[]).includes('personalizable')) {
-                            row.personalizable = (row.personalizable as number) + 1
-                        }
                         counts.set(slug, row)
                     }
                     return Promise.resolve([...counts.values()])
@@ -312,20 +338,7 @@ export class FakeDb {
         const of = (entity: unknown) => this.table(entity).filter((row) => row.orderId === order.id)
         return {
             ...order,
-            items: of(OrderItem).map((item) => {
-                const design = this.table(Design).find((row) => row.id === item.designId)
-                return {
-                    ...item,
-                    design: design
-                        ? {
-                              ...design,
-                              assets: this.table(DesignAsset).filter(
-                                  (asset) => asset.designId === design.id,
-                              ),
-                          }
-                        : null,
-                }
-            }),
+            items: of(OrderItem),
             payments: of(OrderPayment),
             history: of(OrderStatusHistory),
             adminNotes: of(OrderNote),
@@ -376,17 +389,18 @@ export class FakeDb {
             return Promise.resolve([])
         }
         if (sql.includes('FROM "order_payments" p')) {
-            const [reference, orderId, closed, digits] = params as [
+            const [method, reference, orderId, closed] = params as [
+                string,
                 string,
                 string,
                 string[],
-                number,
             ]
             return Promise.resolve(
                 this.table(OrderPayment).filter((payment) => {
                     const order = this.table(Order).find((row) => row.id === payment.orderId)
                     return (
-                        (payment.reference as string).slice(-digits) === reference &&
+                        payment.method === method &&
+                        payment.reference === reference &&
                         payment.orderId !== orderId &&
                         !closed.includes(order?.status as string)
                     )
@@ -447,14 +461,7 @@ export class FakeDb {
                 const rows = this.table(entity)
                 const keep = rows.filter((row) => !matches(row, where))
                 const affected = rows.length - keep.length
-                const gone = rows.filter((row) => matches(row, where)).map((row) => row.id)
                 rows.splice(0, rows.length, ...keep)
-                if (entity === Design) {
-                    // design_assets.design_id is ON DELETE CASCADE.
-                    const assets = this.table(DesignAsset)
-                    const kept = assets.filter((asset) => !gone.includes(asset.designId))
-                    assets.splice(0, assets.length, ...kept)
-                }
                 return Promise.resolve({ affected })
             },
             createQueryBuilder: () => this.queryBuilder(entity),

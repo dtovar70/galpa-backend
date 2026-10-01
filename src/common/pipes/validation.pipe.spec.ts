@@ -13,11 +13,10 @@ interface FieldError {
 }
 
 const VALID_PRODUCT = {
-    name: 'Taza de prueba',
-    categorySlug: 'tazas',
+    name: 'Split de prueba',
+    categorySlug: 'aires-residenciales',
+    brand: 'Gree',
     price: 10,
-    printText: 'Hola',
-    colorHex: '#FFFFFF',
     description: 'Descripción',
     stock: 3,
 }
@@ -57,6 +56,7 @@ describe('createValidationPipe', () => {
         const details = await detailsFor({ variants: [{ label: 'M' }] }, CreateProductDto)
         const messages = details.flatMap((detail) => detail.errors)
         expect(messages).toContain('El nombre es obligatorio.')
+        expect(messages).toContain('La marca es obligatoria.')
         // The product's own stock is optional (with variants it is their sum).
         expect(errorsOf(details, 'stock')).toEqual([])
         expect(errorsOf(details, 'variants.0.stock')).toContain(
@@ -71,12 +71,12 @@ describe('createValidationPipe', () => {
         const details = await detailsFor(
             {
                 ...VALID_PRODUCT,
-                sku: 'X',
+                printText: 'X',
                 variants: [{ label: 'A', priceDelta: 0, stock: 1, foo: 1 }],
             },
             CreateProductDto,
         )
-        expect(errorsOf(details, 'sku')).toEqual(['El campo "sku" no está permitido.'])
+        expect(errorsOf(details, 'printText')).toEqual(['El campo "printText" no está permitido.'])
         expect(errorsOf(details, 'variants.0.foo')).toEqual(['El campo "foo" no está permitido.'])
     })
 
@@ -93,7 +93,7 @@ describe('createValidationPipe', () => {
 
     it('validates new categories in Spanish', async () => {
         const details = await detailsFor(
-            { name: '', slug: 'Tazas Grandes', colorHex: 'rosa', sortOrder: -1 },
+            { name: '', slug: 'Aires Grandes', colorHex: 'verde', sortOrder: -1, icon: 'Air Vent' },
             CreateCategoryDto,
         )
         expect(errorsOf(details, 'name')).toEqual(['El nombre de la categoría es obligatorio.'])
@@ -101,11 +101,25 @@ describe('createValidationPipe', () => {
             'El slug solo admite minúsculas, números y guiones.',
         ])
         expect(errorsOf(details, 'colorHex')).toEqual([
-            'El color de la categoría debe tener formato hexadecimal, por ejemplo #FFB3D1.',
+            'El color de la categoría debe tener formato hexadecimal, por ejemplo #10B981.',
         ])
         expect(errorsOf(details, 'sortOrder')).toEqual([
             'La posición de la categoría no puede ser negativa.',
         ])
+        expect(errorsOf(details, 'icon')).toEqual([
+            'El ícono solo admite minúsculas, números y guiones (por ejemplo air-vent).',
+        ])
+    })
+
+    it('validates the ficha técnica rows of a product', async () => {
+        const details = await detailsFor(
+            { ...VALID_PRODUCT, specs: [{ label: '', value: '12.000 BTU' }], btu: 0 },
+            CreateProductDto,
+        )
+        expect(errorsOf(details, 'specs.0.label')).toEqual([
+            'El nombre de la característica es obligatorio.',
+        ])
+        expect(errorsOf(details, 'btu')).toEqual(['La capacidad en BTU debe ser como mínimo 1.'])
     })
 
     it('accepts a partial category update but never a new slug', async () => {

@@ -2,29 +2,27 @@ import type { ContactContent } from '../content/content.types.js'
 import { contactLinks, escapeHtml, renderEmail } from './email-layout.js'
 
 const CONTACT: ContactContent = {
-    email: 'hola@manadarusso.com',
+    email: 'hola@galpa.com.ve',
     phone: '0414-5086536',
     whatsapp: '0414-5086536',
     city: 'Caracas',
     schedule: '',
-    instagram: 'manadarussocreativa',
+    instagram: 'galpa2022',
     tiktok: '',
 }
 
 describe('email layout', () => {
     it('escapes every value in the HTML and keeps it readable in the text part', () => {
         const { html, text } = renderEmail({
-            brandName: 'Manada <Russo>',
+            brandName: 'Galpa <Clima>',
             contact: CONTACT,
             preheader: 'Hola & bienvenida',
             blocks: [
                 { kind: 'heading', text: '¡Hola, <script>alert(1)</script>!' },
-                { kind: 'paragraph', parts: ['Tu pedido ', { bold: 'MR-000001' }, ' "llegó"'] },
+                { kind: 'paragraph', parts: ['Tu pedido ', { bold: 'GP-000001' }, ' "llegó"'] },
                 {
                     kind: 'items',
-                    items: [
-                        { title: 'Taza <b>', details: ['Personalización: “<img>”'], amount: '$1' },
-                    ],
+                    items: [{ title: 'Split <b>', details: ['Nota: “<img>”'], amount: '$1' }],
                 },
                 {
                     kind: 'rows',
@@ -33,7 +31,7 @@ describe('email layout', () => {
                 },
                 {
                     kind: 'button',
-                    href: 'https://tienda.test/pedido/MR-000001?t=a&b',
+                    href: 'https://tienda.test/pedido/GP-000001?t=a&b',
                     label: 'Ver mi pedido',
                 },
             ],
@@ -41,19 +39,17 @@ describe('email layout', () => {
         expect(html).not.toContain('<script>')
         expect(html).not.toContain('<img>')
         expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
-        expect(html).toContain('Manada &lt;Russo&gt;')
-        expect(html).toContain('<strong>MR-000001</strong> &quot;llegó&quot;')
-        expect(html).toContain('href="https://tienda.test/pedido/MR-000001?t=a&amp;b"')
+        expect(html).toContain('Galpa &lt;Clima&gt;')
+        expect(html).toContain('<strong>GP-000001</strong> &quot;llegó&quot;')
+        expect(html).toContain('href="https://tienda.test/pedido/GP-000001?t=a&amp;b"')
         expect(html).toContain('lang="es"')
 
         expect(text).toContain('¡HOLA, <SCRIPT>ALERT(1)</SCRIPT>!')
-        expect(text).toContain('Tu pedido MR-000001 "llegó"')
-        expect(text).toContain('- Taza <b> — $1\n  Personalización: “<img>”')
+        expect(text).toContain('Tu pedido GP-000001 "llegó"')
+        expect(text).toContain('- Split <b> — $1\n  Nota: “<img>”')
         expect(text).toContain('Pago\nMonto: Bs. 1,00')
-        expect(text).toContain('Ver mi pedido: https://tienda.test/pedido/MR-000001?t=a&b')
-        expect(text).toContain(
-            '--\nManada <Russo>\nhola@manadarusso.com: mailto:hola@manadarusso.com',
-        )
+        expect(text).toContain('Ver mi pedido: https://tienda.test/pedido/GP-000001?t=a&b')
+        expect(text).toContain('--\nGalpa <Clima>\nhola@galpa.com.ve: mailto:hola@galpa.com.ve')
     })
 
     it('never turns a non-web link into an href', () => {
@@ -68,11 +64,11 @@ describe('email layout', () => {
 
     it('lists only the contact data that is set', () => {
         expect(contactLinks(CONTACT)).toEqual([
-            { label: 'hola@manadarusso.com', href: 'mailto:hola@manadarusso.com' },
+            { label: 'hola@galpa.com.ve', href: 'mailto:hola@galpa.com.ve' },
             { label: 'WhatsApp 0414-5086536', href: 'https://wa.me/584145086536' },
             {
-                label: 'Instagram @manadarussocreativa',
-                href: 'https://instagram.com/manadarussocreativa',
+                label: 'Instagram @galpa2022',
+                href: 'https://instagram.com/galpa2022',
             },
         ])
         expect(

@@ -7,6 +7,7 @@ import {
     HttpCode,
     HttpStatus,
     Param,
+    Patch,
     Post,
     Query,
     Res,
@@ -18,19 +19,19 @@ import { FileInterceptor } from '@nestjs/platform-express'
 import { Throttle } from '@nestjs/throttler'
 import type { Response } from 'express'
 import { Public } from '../common/decorators/public.decorator.js'
-import { sendPrivateFile } from '../designs/send-private-file.js'
 import { CreateOrderDto } from './dto/create-order.dto.js'
 import { OrderAccessQueryDto, OrderLookupDto } from './dto/order-access.dto.js'
+import { ChangePaymentMethodDto } from './dto/change-payment-method.dto.js'
 import { ORDER_LOOKUP_REQUESTED, OrderLookupService } from './emails/order-lookup.service.js'
 import { SubmitPaymentDto } from './dto/submit-payment.dto.js'
 import type { PublicOrderDto } from './order.mapper.js'
 import { OrdersService, type CreatedOrderDto } from './orders.service.js'
-import { sendReceipt } from './receipt/send-receipt.js'
+import { sendPdf } from '../common/http/send-pdf.js'
 import { ReceiptService } from './receipt/receipt.service.js'
 import { PROOF_FIELD, PROOF_UPLOAD_OPTIONS, ProofUploadErrorsFilter } from './payment-upload.js'
 import { IDEMPOTENCY_KEY_HEADER, parseIdempotencyKey } from './order-idempotency.js'
 
-/** Per client IP: 10 new orders / payment proofs every 10 minutes. */
+/** Per client IP: 10 new orders / payment proofs / method changes every 10 minutes. */
 const WRITE_LIMIT = { default: { limit: 10, ttl: 10 * 60_000 } }
 /** Per client IP: 20 receipt PDFs every 10 minutes (each one is rendered on request). */
 const RECEIPT_LIMIT = { default: { limit: 20, ttl: 10 * 60_000 } }
@@ -94,18 +95,7 @@ export class OrdersController {
         @Query() query: OrderAccessQueryDto,
         @Res() res: Response,
     ): Promise<void> {
-        sendReceipt(res, await this.receipts.forCustomer(code, query.t))
-    }
-
-    /** The preview of a line's own design ("Diseño propio"), for the order's private link. */
-    @Get(':code/designs/:designId/preview')
-    async designPreview(
-        @Param('code') code: string,
-        @Param('designId') designId: string,
-        @Query() query: OrderAccessQueryDto,
-        @Res() res: Response,
-    ): Promise<void> {
-        sendPrivateFile(res, await this.orders.designPreview(code, query.t, designId))
+        sendPdf(res, await this.receipts.forCustomer(code, query.t))
     }
 
     @Get(':code')
@@ -113,6 +103,21 @@ export class OrdersController {
     @Header('Referrer-Policy', 'no-referrer')
     get(@Param('code') code: string, @Query() query: OrderAccessQueryDto): Promise<PublicOrderDto> {
         return this.orders.getForCustomer(code, query.t)
+    }
+
+    /**
+     * `{ method }`: pay with another offered method. Only while the order waits for a payment
+     * (PENDIENTE_PAGO or PAGO_RECHAZADO); 409 otherwise, 400 for a method not offered.
+     */
+    @Patch(':code/payment-method')
+    @Throttle(WRITE_LIMIT)
+    @Header('Cache-Control', 'no-store')
+    changePaymentMethod(
+        @Param('code') code: string,
+        @Query() query: OrderAccessQueryDto,
+        @Body() dto: ChangePaymentMethodDto,
+    ): Promise<PublicOrderDto> {
+        return this.orders.changePaymentMethod(code, query.t, dto.method)
     }
 
     /** multipart/form-data: the text fields of SubmitPaymentDto plus an optional `proof` image. */

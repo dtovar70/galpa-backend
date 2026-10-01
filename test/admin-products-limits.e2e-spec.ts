@@ -19,11 +19,10 @@ describe('Admin products limits (e2e)', () => {
     }
 
     const validProduct = {
-        name: 'Taza Clásica',
-        categorySlug: 'mugs',
+        name: 'Split Clásico',
+        categorySlug: 'aires-residenciales',
+        brand: 'Gree',
         price: 12,
-        printText: 'Hola',
-        colorHex: '#FFB3D1',
         description: '',
         stock: 3,
     }
@@ -75,9 +74,9 @@ describe('Admin products limits (e2e)', () => {
             .patch('/api/admin/products/p1')
             .send({
                 variants: [
-                    { label: 'S', priceDelta: 0 },
-                    { label: 'M', priceDelta: 0, stock: -1 },
-                    { label: 'L', priceDelta: 0, stock: 1.5 },
+                    { label: '110V', priceDelta: 0 },
+                    { label: '220V', priceDelta: 0, stock: -1 },
+                    { label: '208-230V', priceDelta: 0, stock: 1.5 },
                 ],
             })
             .expect(400)
@@ -94,7 +93,7 @@ describe('Admin products limits (e2e)', () => {
 
         await request(app.getHttpServer())
             .patch('/api/admin/products/p1')
-            .send({ variants: [{ id: 'v-s', label: 'S', priceDelta: 0, stock: 0 }] })
+            .send({ variants: [{ id: 'v-110v', label: '110V', priceDelta: 0, stock: 0 }] })
             .expect(200)
         expect(products.update).toHaveBeenCalledOnce()
     })
@@ -146,5 +145,39 @@ describe('Admin products limits (e2e)', () => {
         expect(errorsOf(response.body, 'description')).toContain(
             'La descripción no puede superar los 4000 caracteres.',
         )
+    })
+
+    it('requires the brand and validates the stock mode, SKU and ficha técnica', async () => {
+        const response = await request(app.getHttpServer())
+            .post('/api/admin/products')
+            .send({
+                ...validProduct,
+                brand: '',
+                stockMode: 'SOMETIMES',
+                sku: 'con espacios',
+                specs: Array.from({ length: 31 }, () => ({ label: 'Capacidad', value: '9.000' })),
+            })
+            .expect(400)
+        expect(errorsOf(response.body, 'brand')).toEqual(['La marca es obligatoria.'])
+        expect(errorsOf(response.body, 'stockMode')).toEqual([
+            'El modo de inventario no es válido.',
+        ])
+        expect(errorsOf(response.body, 'sku')).toEqual([
+            'El SKU solo admite letras, números, puntos, guiones y barras.',
+        ])
+        expect(errorsOf(response.body, 'specs')).toEqual([
+            'La ficha técnica admite como máximo 30 elementos.',
+        ])
+
+        await request(app.getHttpServer())
+            .patch('/api/admin/products/p1')
+            .send({ stockMode: 'ON_ORDER', leadTimeDays: 15, sku: null, btu: null })
+            .expect(200)
+        expect(products.update).toHaveBeenCalledWith('p1', {
+            stockMode: 'ON_ORDER',
+            leadTimeDays: 15,
+            sku: null,
+            btu: null,
+        })
     })
 })

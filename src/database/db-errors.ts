@@ -9,6 +9,13 @@ export function isDbError(error: unknown, code: PgErrorCode): boolean {
     return driverError?.code === code
 }
 
+/** Name of the violated constraint (e.g. `products_sku_key`), when Postgres reports one. */
+export function constraintOf(error: unknown): string | null {
+    if (!(error instanceof QueryFailedError)) return null
+    const driverError = error.driverError as { constraint?: unknown } | undefined
+    return typeof driverError?.constraint === 'string' ? driverError.constraint : null
+}
+
 /** Returns a copy without `undefined` values, so partial updates only touch sent fields. */
 export function omitUndefined<T extends object>(value: T): Partial<T> {
     return Object.fromEntries(

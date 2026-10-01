@@ -17,7 +17,7 @@ import { TelegramUpdatesService } from './telegram-updates.service.js'
 import { TelegramWebhookController } from './telegram-webhook.controller.js'
 
 /**
- * Phase 4: the owner's Telegram bot. Notifies linked chats about payments (and, optionally, new
+ * The owner's Telegram bot. Notifies linked chats about payments (and, optionally, new
  * orders) and lets them confirm or reject payments through OrderStatusService, like the admin.
  * Off without TELEGRAM_BOT_TOKEN (or with TELEGRAM_ENABLED=false); the rest of the API does not
  * depend on it.

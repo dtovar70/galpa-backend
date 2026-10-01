@@ -11,6 +11,14 @@ import { ProductRepository } from './product.repository.js'
 import { toPublicProduct, type Paginated, type PublicProductDto } from './product.mapper.js'
 import { FEATURED_LIMIT, PRODUCT_NOT_FOUND, RELATED_LIMIT } from './products.constants.js'
 
+/** `GET /products/facets`: what the visible catalog can be filtered by. */
+export interface CatalogFacetsDto {
+    brands: string[]
+    btus: number[]
+    voltages: string[]
+    priceRange: { min: number; max: number }
+}
+
 const ACTIVE = { clause: `${PRODUCT_ALIAS}.isActive = :isActive`, params: { isActive: true } }
 
 /** Read-only storefront catalog. Only active products are exposed. */
@@ -31,7 +39,7 @@ export class CatalogService {
         const [products, variants] = await Promise.all([
             this.productRows.find({
                 where: { id: In(productIds) },
-                select: { id: true, stock: true, isActive: true },
+                select: { id: true, stock: true, stockMode: true, isActive: true },
             }),
             this.variantRows.find({
                 where: { productId: In(productIds) },
@@ -39,6 +47,44 @@ export class CatalogService {
             }),
         ])
         return resolveAvailability(items, products, variants)
+    }
+
+    /** Filter values of the visible products (optionally of one category), for the store's sidebar. */
+    async facets(category?: string): Promise<CatalogFacetsDto> {
+        const base = () => {
+            const query = this.productRows
+                .createQueryBuilder(PRODUCT_ALIAS)
+                .where(`${PRODUCT_ALIAS}.isActive = :isActive`, { isActive: true })
+            if (category) {
+                query.andWhere(`${PRODUCT_ALIAS}.categorySlug = :category`, { category })
+            }
+            return query
+        }
+        const distinct = async (column: string) =>
+            (
+                await base()
+                    .select(`${PRODUCT_ALIAS}.${column}`, 'value')
+                    .andWhere(`${PRODUCT_ALIAS}.${column} IS NOT NULL`)
+                    .distinct(true)
+                    .orderBy('value', 'ASC')
+                    .getRawMany<{ value: string | number }>()
+            ).map((row) => row.value)
+
+        const [brands, btus, voltages, prices] = await Promise.all([
+            distinct('brand'),
+            distinct('btu'),
+            distinct('voltage'),
+            base()
+                .select(`MIN(${PRODUCT_ALIAS}.price)`, 'min')
+                .addSelect(`MAX(${PRODUCT_ALIAS}.price)`, 'max')
+                .getRawOne<{ min: string | null; max: string | null }>(),
+        ])
+        return {
+            brands: brands.map(String),
+            btus: btus.map(Number),
+            voltages: voltages.map(String),
+            priceRange: { min: Number(prices?.min ?? 0), max: Number(prices?.max ?? 0) },
+        }
     }
 
     async list(query: CatalogQueryDto): Promise<Paginated<PublicProductDto>> {

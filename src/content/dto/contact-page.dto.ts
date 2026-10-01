@@ -5,7 +5,7 @@ import type { ContactPageContent, ContentPlaceholder, FaqItem } from '../content
 import { CONTENT_LIST_SIZES, CONTENT_LIMITS as MAX } from './content-limits.js'
 import { ContentList, ContentText } from './content-validation.js'
 
-const FAQ_PLACEHOLDERS: readonly ContentPlaceholder[] = ['envioGratis', 'tarifaEnvio', 'produccion']
+const FAQ_PLACEHOLDERS: readonly ContentPlaceholder[] = ['envioGratis', 'tarifaEnvio', 'despacho']
 
 export class FaqItemDto implements FaqItem {
     @ContentText(feminine('La pregunta'), { max: MAX.question, placeholders: FAQ_PLACEHOLDERS })

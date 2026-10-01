@@ -14,6 +14,8 @@ import { MaxInputLength } from '../../common/validation/text-limits.js'
 import {
     CATEGORY_DESCRIPTION_MAX_LENGTH,
     CATEGORY_FIELD as FIELD,
+    CATEGORY_ICON_MAX_LENGTH,
+    CATEGORY_ICON_PATTERN,
     CATEGORY_NAME_MAX_LENGTH,
     CATEGORY_SLUG_MAX_LENGTH,
     CATEGORY_SORT_ORDER_MAX,
@@ -53,6 +55,17 @@ export class CreateCategoryDto {
     @MaxInputLength(FIELD.color)
     @Matches(HEX_COLOR_PATTERN, { message: msg.hexColor(FIELD.color) })
     colorHex: string
+
+    /** Lucide icon name; null (or omitted) for none. */
+    @IsOptional()
+    @IsString({ message: msg.text(FIELD.icon) })
+    @MaxLength(CATEGORY_ICON_MAX_LENGTH, {
+        message: msg.maxLength(FIELD.icon, CATEGORY_ICON_MAX_LENGTH),
+    })
+    @Matches(CATEGORY_ICON_PATTERN, {
+        message: 'El ícono solo admite minúsculas, números y guiones (por ejemplo air-vent).',
+    })
+    icon?: string | null
 
     /** Position in menus and lists (ascending). Defaults to after the last category. */
     @IsOptional()

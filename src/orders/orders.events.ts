@@ -1,9 +1,10 @@
+import type { PaymentCurrency, PaymentMethod } from '../common/payment-methods.js'
 import type { PaymentSource } from './entities/order-payment.entity.js'
 import type { ActorKind, OrderStatus, RefundStatus } from './order-status.js'
 
 /**
- * Domain events emitted after the change is committed. Listeners (e.g. the Phase 4 Telegram
- * bot) subscribe with `@OnEvent(ORDER_EVENTS.created)` and never touch the order logic; to act
+ * Domain events emitted after the change is committed. Listeners (the Telegram bot, the
+ * customer emails) subscribe with `@OnEvent(ORDER_EVENTS.created)` and never touch the order logic; to act
  * on an order they call `OrderStatusService.transition()` like the admin API does.
  */
 export const ORDER_EVENTS = {
@@ -21,6 +22,9 @@ export interface OrderCreatedEvent {
     totalUsd: number
     totalBs: number
     exchangeRate: number
+    paymentMethod: PaymentMethod
+    hasOnOrderItems: boolean
+    wantsInstallation: boolean
     itemCount: number
     paymentDueAt: string
     createdAt: string
@@ -30,13 +34,22 @@ export interface OrderPaymentSubmittedEvent {
     orderId: string
     code: string
     paymentId: string
+    method: PaymentMethod
+    /** Bolívares for Pago Móvil and transfers, dollars for Zelle and Binance. */
+    currency: PaymentCurrency
     reference: string
-    payerBankCode: string
-    payerBankName: string
-    amountBs: number
-    expectedBs: number
-    /** Paid minus expected (0 when exact). */
-    amountDifferenceBs: number
+    /** Bolívar methods only. */
+    payerBankCode: string | null
+    payerBankName: string | null
+    /** Zelle only. */
+    payerName: string | null
+    /** Zelle and Binance. */
+    payerAccount: string | null
+    /** In `currency`. */
+    amount: number
+    expected: number
+    /** Paid minus expected, in `currency` (0 when exact). */
+    amountDifference: number
     duplicateReference: boolean
     hasProof: boolean
     /** Sent after the payment deadline or while the order was expired. */

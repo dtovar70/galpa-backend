@@ -1,170 +1,192 @@
 /**
- * Built-in content: exactly the texts and values the storefront shipped with before they became
- * editable. `GET /content` merges the stored values over these, so a section nobody edited (or a
- * field added later) renders these.
+ * Built-in content. `GET /content` merges the stored values over these, so a section nobody
+ * edited (or a field added later) renders these. Contact details are placeholders the owner
+ * replaces from the admin panel.
  *
- * Mirrored in frontend-cups/src/configs/content.defaults.ts, which the storefront uses when the
+ * Mirrored in frontend-galpa/src/configs/content.defaults.ts, which the storefront uses when the
  * API cannot be reached. Keep both files identical (only the import and this comment differ).
  */
 import type { SiteContent } from './content.types.js'
 
 export const DEFAULT_SITE_CONTENT: SiteContent = {
     general: {
-        brandName: 'Manada Russo Creativa',
-        tagline: 'Sublimación hecha con amor',
+        brandName: 'Corporación Galpa 2022 C.A.',
+        tagline: '30 años climatizando tus espacios',
         description:
-            'Tazas, franelas y llaveros personalizados con sublimación. Tú mandas el diseño, nosotros lo hacemos realidad.',
-        titleSuffix: 'Sublimación hecha con amor',
+            'Aires acondicionados residenciales y comerciales, repuestos y accesorios. Te asesoramos para elegir el equipo ideal para tu espacio.',
+        titleSuffix: '30 años climatizando tus espacios',
         metaDescription:
-            'Tazas, franelas y llaveros personalizados con sublimación. Diseños 100% a tu medida, hechos a mano en Venezuela y con envío gratis desde {envioGratis}.',
-        searchPlaceholder: 'Buscar tazas, franelas…',
+            'Aires acondicionados split, piso-techo y cassette, repuestos y accesorios de las mejores marcas. Asesoría personalizada, equipos en stock y bajo pedido, envío gratis desde {envioGratis}.',
+        searchPlaceholder: 'Buscar equipos, marcas, repuestos…',
     },
     announcements: {
         messages: [
             'Envío gratis desde {envioGratis}',
-            'Diseños 100% personalizables',
-            'Hecho a mano en Venezuela',
+            'Asesoría gratuita para elegir tu equipo',
+            '30 años climatizando tus espacios',
         ],
     },
     home: {
-        heroBadge: 'Sublimación hecha con amor',
-        heroTitle: 'Tazas, franelas y llaveros *que hablan* por ti',
+        heroBadge: '30 años de experiencia',
+        heroTitle: 'El clima ideal para tu *hogar* y tu *negocio*',
         heroSubtitle:
-            'Tú mandas la idea, nosotros la sublimamos. Piezas únicas para regalar, para tu marca o simplemente porque sí.',
-        heroPrimaryCta: 'Explorar catálogo',
-        heroSecondaryCta: 'Personalizar el mío',
-        heroFeatures: ['100% personalizable', 'Envío nacional', 'Hecho a mano'],
-        categoriesEyebrow: 'Qué hacemos',
-        categoriesTitle: 'Elige tu *lienzo* favorito',
+            'Aires acondicionados de las mejores marcas, repuestos originales y accesorios de instalación. Te ayudamos a elegir el equipo correcto para tu espacio.',
+        heroPrimaryCta: 'Ver equipos',
+        heroSecondaryCta: 'Pedir asesoría',
+        heroFeatures: ['Marcas reconocidas', 'Equipos en stock y bajo pedido', 'Asesoría experta'],
+        categoriesEyebrow: 'Lo que ofrecemos',
+        categoriesTitle: 'Todo para *climatizar* tus espacios',
         categoriesDescription:
-            '{categorias}, infinitas ideas. Todos se personalizan con tu texto, tu foto o tu logo.',
-        featuredEyebrow: 'Los más pedidos',
-        featuredTitle: 'Tus *favoritos*',
-        featuredDescription: 'Los diseños que más salen de nuestro taller esta temporada.',
+            '{categorias} pensadas para hogares, oficinas y comercios. Equipos nuevos, repuestos y todo lo necesario para la instalación.',
+        featuredEyebrow: 'Los más vendidos',
+        featuredTitle: 'Equipos *destacados*',
+        featuredDescription: 'Los modelos que más eligen nuestros clientes esta temporada.',
         featuredCta: 'Ver todo el catálogo',
-        stepsEyebrow: 'Así de fácil',
-        stepsTitle: '*Tres pasos* y listo',
-        stepsDescription: 'Sin mínimos imposibles ni formularios eternos.',
+        stepsEyebrow: 'Cómo comprar',
+        stepsTitle: 'Tu equipo en *tres pasos*',
+        stepsDescription: 'Te acompañamos desde la elección hasta la entrega.',
         steps: [
             {
-                title: 'Elige tu producto',
+                title: 'Elige o pide asesoría',
                 description:
-                    'Taza, franela o llavero. Escoge el modelo, el tamaño y el color que mejor va con tu idea.',
+                    'Filtra por capacidad, voltaje o marca. Si tienes dudas, cuéntanos el tamaño de tu espacio y te recomendamos el equipo ideal.',
             },
             {
-                title: 'Envía tu diseño',
+                title: 'Paga como prefieras',
                 description:
-                    'Mándanos tu foto, tu texto o tu logo por WhatsApp. Si no tienes arte, lo armamos contigo.',
+                    'Pago Móvil, transferencia, Zelle o Binance. Verificamos tu pago y te mantenemos al tanto por correo y WhatsApp.',
             },
             {
-                title: 'Lo sublimamos y enviamos',
+                title: 'Recibe o retira',
                 description:
-                    'Producimos en 3 a 5 días hábiles y te lo llevamos a la puerta, listo para regalar.',
+                    'Despachamos tu pedido o lo retiras en tienda. Los equipos bajo pedido llegan en el plazo indicado en cada ficha.',
             },
         ],
-        testimonialsEyebrow: 'Clientes felices',
+        testimonialsEyebrow: 'Clientes satisfechos',
         testimonialsTitle: 'Lo que *dicen* de nosotros',
         testimonials: [],
-        ctaBadge: 'Pedidos por mayor',
-        ctaTitle: '¿Tienes una *idea* en mente?',
+        ctaBadge: 'Proyectos comerciales',
+        ctaTitle: '¿Necesitas climatizar un *local* u *oficina*?',
         ctaDescription:
-            'Cuéntanos qué necesitas y te mandamos un boceto sin compromiso. Desde una pieza hasta cien.',
-        ctaPrimary: 'Pedir mi diseño',
+            'Cuéntanos los metros de tu espacio y te enviamos una cotización a la medida, con equipos, materiales e instalación.',
+        ctaPrimary: 'Solicitar cotización',
         ctaSecondary: 'Conócenos',
     },
     about: {
-        badge: 'Desde 2020',
-        title: 'Un taller pequeño con *ideas grandes*',
+        badge: '30 años de experiencia',
+        title: 'Tres décadas *climatizando* Venezuela',
         paragraphs: [
-            '{marca} nació en una mesa de comedor con una prensa de segunda mano y muchas ganas. Hoy seguimos siendo un equipo chiquito, y eso es justo lo que nos permite cuidar cada pieza como si fuera para nuestra casa.',
-            'Sublimamos en {ciudad} y enviamos a todo el país. Cada pedido pasa por una revisión de arte antes de entrar a la prensa, porque una taza mal centrada no se arregla después.',
+            '{marca} reúne 30 años de experiencia en la venta de aires acondicionados, repuestos y accesorios. Conocemos los equipos por dentro, y por eso podemos recomendarte el que de verdad necesitas.',
+            'Atendemos hogares, oficinas y comercios desde {ciudad}. Trabajamos con marcas reconocidas, mantenemos equipos en stock y conseguimos bajo pedido lo que no tengamos a mano.',
         ],
-        ctaLabel: 'Hablemos de tu idea',
-        imageBadge: 'Taller propio',
+        ctaLabel: 'Pide tu asesoría',
+        imageBadge: 'Asesoría personalizada',
         valuesEyebrow: 'Cómo trabajamos',
-        valuesTitle: 'Lo que *no negociamos*',
-        valuesDescription: 'Cuatro cosas que sostienen todo lo que sale del taller.',
+        valuesTitle: 'Lo que nos *distingue*',
+        valuesDescription: 'Cuatro compromisos que mantenemos con cada cliente.',
         values: [
             {
-                icon: 'palette',
-                title: 'Diseño con criterio',
+                icon: 'air-vent',
+                title: 'El equipo correcto',
                 description:
-                    'Si tu idea no se va a ver bien sublimada, te lo decimos y te proponemos una alternativa.',
+                    'Calculamos la capacidad según tu espacio para que no gastes de más ni te quedes corto.',
             },
             {
                 icon: 'heart-handshake',
                 title: 'Trato cercano',
                 description:
-                    'Hablas con la persona que produce tu pedido, no con un formulario ni con un bot.',
+                    'Te atiende una persona que conoce los equipos, antes, durante y después de tu compra.',
             },
             {
-                icon: 'timer',
-                title: 'Tiempos reales',
+                icon: 'shield-check',
+                title: 'Garantía real',
                 description:
-                    'Prometemos lo que podemos cumplir. Si algo se atrasa, te avisamos antes de que preguntes.',
+                    'Equipos nuevos con garantía del fabricante y respaldo directo de nuestro equipo.',
             },
             {
-                icon: 'leaf',
-                title: 'Materiales que duran',
+                icon: 'wrench',
+                title: 'Repuestos a mano',
                 description:
-                    'Cerámica, algodón y acrílico probados en el taller antes de ofrecerlos en el catálogo.',
+                    'Capacitores, tarjetas, motores y más para mantener tus equipos funcionando.',
             },
         ],
         statsEyebrow: 'En números',
-        statsTitle: 'El taller en *cifras*',
+        statsTitle: 'Nuestra trayectoria en *cifras*',
         stats: [
-            { value: '+4.800', label: 'pedidos entregados' },
-            { value: '6', label: 'años sublimando' },
-            { value: '23', label: 'ciudades atendidas' },
+            { value: '30', label: 'años de experiencia' },
+            { value: '+10.000', label: 'equipos vendidos' },
+            { value: '+15', label: 'marcas disponibles' },
         ],
     },
     contact: {
-        email: 'hola@manadarusso.com',
-        phone: '0414-5086536',
-        whatsapp: '0414-5086536',
-        city: 'Quíbor, estado Lara',
-        schedule: 'Lunes a viernes, 9:00 a.m. – 6:00 p.m.',
-        instagram: 'manadarussocreativa',
-        tiktok: 'manadarussocreativa',
+        email: 'ventas@galpa.com.ve',
+        phone: '0414-0000000',
+        whatsapp: '0414-0000000',
+        city: 'Dirección por configurar',
+        schedule: 'Lunes a viernes, 8:00 a.m. – 5:00 p.m.',
+        instagram: 'galpa2022',
+        tiktok: 'galpa2022',
     },
     contactPage: {
-        badge: 'Respondemos rápido',
-        title: 'Cuéntanos qué quieres *sublimar*',
-        intro: 'Un regalo, el uniforme del equipo o el detalle de tu evento. Escríbenos y armamos la propuesta contigo.',
+        badge: 'Asesoría sin compromiso',
+        title: 'Cuéntanos qué espacio quieres *climatizar*',
+        intro: 'Tu casa, tu oficina o tu local. Escríbenos con los metros y el uso del espacio y te recomendamos el equipo ideal.',
         faqEyebrow: 'Dudas comunes',
         faqTitle: 'Preguntas *frecuentes*',
         faq: [
             {
-                question: '¿Hay cantidad mínima de pedido?',
-                answer: 'No. Hacemos desde una sola pieza. A partir de 12 unidades aplicamos precio por mayor.',
+                question: '¿Qué capacidad de aire necesito?',
+                answer: 'Depende de los metros, la orientación y el uso del espacio. Como guía, un cuarto de 12 a 15 m² suele necesitar 12.000 BTU. Escríbenos y te ayudamos a calcularlo.',
             },
             {
-                question: 'No tengo el diseño listo, ¿me ayudan?',
-                answer: 'Sí. Cuéntanos la idea y te preparamos una propuesta sin costo. Solo cobramos el arte si pides más de dos rondas de cambios.',
+                question: '¿Ofrecen instalación?',
+                answer: 'Sí. Al hacer tu pedido puedes indicar que deseas instalación y te contactamos para coordinar la visita y el presupuesto.',
             },
             {
-                question: '¿Cuánto tardan en producir?',
-                answer: '{produccion}, contados desde que apruebas el boceto. Los pedidos grandes pueden tomar un poco más.',
+                question: '¿Los equipos tienen garantía?',
+                answer: 'Todos los equipos son nuevos y tienen la garantía del fabricante. Conserva tu comprobante de compra, lo necesitarás para cualquier reclamo.',
             },
             {
-                question: '¿Cómo funciona el envío?',
-                answer: 'Envío gratis desde {envioGratis}. Por debajo de ese monto cobramos una tarifa plana y te enviamos el número de guía apenas sale el paquete.',
+                question: '¿Qué significa «bajo pedido»?',
+                answer: 'Son productos que pedimos al proveedor cuando haces tu compra. En cada ficha verás el tiempo estimado de llegada y te avisamos apenas estén en nuestro almacén.',
+            },
+            {
+                question: '¿Qué métodos de pago aceptan?',
+                answer: 'Pago Móvil y transferencia en bolívares a la tasa BCV del día, y Zelle o Binance en dólares. Verificamos tu pago y te confirmamos por correo.',
+            },
+            {
+                question: '¿Cuándo despachan mi pedido?',
+                answer: '{despacho}, una vez verificado el pago. El envío es gratis desde {envioGratis}; por debajo de ese monto cobramos una tarifa de {tarifaEnvio}.',
             },
         ],
     },
     shipping: {
-        freeThreshold: 35,
-        flatRate: 4,
+        freeThreshold: 300,
+        flatRate: 10,
         freeShippingCopy: 'Envío gratis desde {envioGratis}',
-        productionCopy: 'Producción en 3 a 5 días hábiles',
+        dispatchCopy: 'Despachamos en 24 a 48 horas hábiles',
     },
-    /** Not shown on the storefront yet (checkout will use it); empty until the owner fills it. */
+    /** Every method starts disabled and empty until the owner fills in its details. */
     payment: {
-        bankCode: '',
-        bankName: '',
-        phone: '',
-        idNumber: '',
-        holderName: '',
         instructions: '',
+        pagoMovil: {
+            enabled: false,
+            bankCode: '',
+            bankName: '',
+            phone: '',
+            idNumber: '',
+            holderName: '',
+        },
+        transfer: {
+            enabled: false,
+            bankCode: '',
+            bankName: '',
+            accountNumber: '',
+            accountType: 'CORRIENTE',
+            idNumber: '',
+            holderName: '',
+        },
+        zelle: { enabled: false, email: '', holderName: '' },
+        binance: { enabled: false, payId: '', email: '', holderName: '' },
     },
 }

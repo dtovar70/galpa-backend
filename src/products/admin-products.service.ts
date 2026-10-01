@@ -10,16 +10,20 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm'
 import { DataSource, In, Repository, type EntityManager } from 'typeorm'
 import { Category } from '../categories/entities/category.entity.js'
 import { slugify } from '../common/utils/text.util.js'
-import { isDbError, omitUndefined } from '../database/db-errors.js'
+import { constraintOf, isDbError, omitUndefined } from '../database/db-errors.js'
 import { newId } from '../database/id.js'
 import { STORAGE_SERVICE, type StorageService } from '../storage/storage.service.js'
 import { buildSearchConditions, PRODUCT_ALIAS, type Condition } from './catalog-query.js'
 import type { AdminProductQueryDto } from './dto/admin-product-query.dto.js'
-import type { CreateProductDto, ProductVariantInputDto } from './dto/create-product.dto.js'
+import type {
+    CreateProductDto,
+    ProductSpecInputDto,
+    ProductVariantInputDto,
+} from './dto/create-product.dto.js'
 import type { UpdateProductDto } from './dto/update-product.dto.js'
 import { ProductImage } from './entities/product-image.entity.js'
 import { ProductVariant } from './entities/product-variant.entity.js'
-import { Product } from './entities/product.entity.js'
+import { Product, type ProductSpec } from './entities/product.entity.js'
 import { computeDerivedFields } from './product-derived.js'
 import { syncProductStock } from './product-stock.js'
 import { ProductRepository } from './product.repository.js'
@@ -45,11 +49,15 @@ function variantRows(
             productId,
             label: variant.label,
             priceDelta: variant.priceDelta,
-            colorHex: variant.colorHex ?? null,
             stock: variant.stock,
             sortOrder: index,
         }
     })
+}
+
+/** The "ficha técnica" as stored: plain label/value objects, in order. */
+function specRows(specs: readonly ProductSpecInputDto[] | undefined): ProductSpec[] {
+    return (specs ?? []).map(({ label, value }) => ({ label, value }))
 }
 
 /** With variants, the product's stock is their sum; otherwise the given count. */
@@ -122,22 +130,33 @@ export class AdminProductsService {
                     categorySlug: dto.categorySlug,
                     price: dto.price,
                     compareAtPrice: dto.compareAtPrice ?? null,
-                    printText: dto.printText,
-                    colorHex: dto.colorHex,
+                    brand: dto.brand,
+                    model: dto.model ?? null,
+                    sku: dto.sku ?? null,
+                    stockMode: dto.stockMode ?? 'STOCK',
+                    leadTimeDays: dto.leadTimeDays ?? null,
+                    btu: dto.btu ?? null,
+                    voltage: dto.voltage ?? null,
+                    isInverter: dto.isInverter ?? null,
+                    refrigerant: dto.refrigerant ?? null,
+                    specs: specRows(dto.specs),
                     description: dto.description,
                     highlights: dto.highlights ?? [],
                     tags,
-                    rating: dto.rating ?? 0,
-                    reviewCount: dto.reviewCount ?? 0,
                     stock: productStock(dto.variants, dto.stock),
                     isActive: dto.isActive ?? true,
-                    ...computeDerivedFields({ ...dto, tags }),
+                    ...computeDerivedFields({
+                        ...dto,
+                        model: dto.model ?? null,
+                        sku: dto.sku ?? null,
+                        tags,
+                    }),
                 })
                 const variants = variantRows(id, dto.variants ?? [])
                 if (variants.length) await manager.insert(ProductVariant, variants)
             })
         } catch (error) {
-            this.rethrowConstraintError(error, slug)
+            this.rethrowConstraintError(error, slug, dto.sku ?? null)
         }
         return this.get(id)
     }
@@ -149,8 +168,10 @@ export class AdminProductsService {
 
         const merged = {
             name: dto.name ?? current.name,
+            brand: dto.brand ?? current.brand,
+            model: dto.model === undefined ? current.model : dto.model,
+            sku: dto.sku === undefined ? current.sku : dto.sku,
             description: dto.description ?? current.description,
-            printText: dto.printText ?? current.printText,
             tags: dto.tags ?? current.tags,
         }
         const price = dto.price ?? current.price
@@ -158,7 +179,7 @@ export class AdminProductsService {
             dto.compareAtPrice === undefined ? current.compareAtPrice : dto.compareAtPrice
         this.assertCompareAtPrice(price, compareAtPrice)
 
-        const { variants, ...fields } = dto
+        const { variants, specs, ...fields } = dto
         try {
             // Replacing variants and updating the product must succeed or fail together.
             await this.dataSource.transaction(async (manager) => {
@@ -167,6 +188,7 @@ export class AdminProductsService {
                     { id },
                     {
                         ...omitUndefined(fields),
+                        ...(specs ? { specs: specRows(specs) } : {}),
                         ...computeDerivedFields(merged),
                     },
                 )
@@ -175,7 +197,7 @@ export class AdminProductsService {
                 await syncProductStock(manager, [id])
             })
         } catch (error) {
-            this.rethrowConstraintError(error, dto.slug ?? current.slug)
+            this.rethrowConstraintError(error, dto.slug ?? current.slug, merged.sku)
         }
         return this.get(id)
     }
@@ -253,9 +275,13 @@ export class AdminProductsService {
         }
     }
 
-    private rethrowConstraintError(error: unknown, slug: string): never {
+    private rethrowConstraintError(error: unknown, slug: string, sku: string | null): never {
         if (isDbError(error, '23505')) {
-            throw new ConflictException(`Ya existe un producto con el slug "${slug}".`)
+            throw new ConflictException(
+                constraintOf(error) === 'products_sku_key'
+                    ? `Ya existe un producto con el SKU "${sku ?? ''}".`
+                    : `Ya existe un producto con el slug "${slug}".`,
+            )
         }
         if (isDbError(error, '23503')) {
             throw new BadRequestException('La categoría indicada no existe.')

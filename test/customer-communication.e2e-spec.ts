@@ -45,9 +45,8 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
         address: 'Av. Principal, casa 4',
         notes: '',
         deliveryMethod: 'delivery',
-        items: [
-            { productId: 'mug-001', variantId: 'v-15oz', quantity: 2, personalization: 'Ñandú' },
-        ],
+        paymentMethod: 'PAGO_MOVIL',
+        items: [{ productId: 'split-001', variantId: 'v-220v', quantity: 2 }],
         ...overrides,
     })
 
@@ -60,6 +59,7 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
     const pay = (code: string, token: string) => {
         const req = http().post(`/api/orders/${code}/payment?t=${token}`)
         const values: Row = {
+            method: 'PAGO_MOVIL',
             reference: '123456',
             payerBankCode: '0102',
             payerPhone: '0414-1234567',
@@ -98,7 +98,7 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
         siteUrl = config.get<string>('PUBLIC_SITE_URL') ?? ''
         const signer = new JwtService({ secret: config.get<string>('JWT_SECRET') })
         cookie = (user) =>
-            `mr_session=${signer.sign({ sub: USERS[user].id, role: USERS[user].role }, { expiresIn: 600 })}`
+            `galpa_session=${signer.sign({ sub: USERS[user].id, role: USERS[user].role }, { expiresIn: 600 })}`
     })
 
     afterEach(async () => {
@@ -137,7 +137,7 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
             const other = await createOrder()
             await http().get(`/api/orders/${other.code}?t=${token}`).expect(404)
 
-            await admin('post', '/admin/orders/MR-999999/access-links', 'admin').expect(404)
+            await admin('post', '/admin/orders/GP-999999/access-links', 'admin').expect(404)
         })
     })
 
@@ -160,7 +160,7 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
             })
             expect(body.link).toMatch(new RegExp(`^${siteUrl}/pedido/${order.code}\\?t=`))
             expect(body.text).toBe(
-                `Hola Ana 👋 Revisamos el pago de tu pedido ${order.code} y no pudimos aprobarlo: La referencia no coincide. Puedes subir un nuevo comprobante aquí: ${body.link}`,
+                `Hola Ana. Revisamos el pago de tu pedido ${order.code} y no pudimos aprobarlo: La referencia no coincide. Puedes subir un nuevo comprobante aquí: ${body.link}`,
             )
             expect(body.url).toBe(
                 `https://wa.me/584141234567?text=${encodeURIComponent(body.text)}`,
@@ -195,7 +195,7 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
             ).expect(200)
             expect(body).toMatchObject({ phone: null, url: null, customerPhone: '0212-5551234' })
             expect(body.text).toContain('$36,00 (Bs. 30.760,69)')
-            expect(body.text).toContain('Manada Russo Creativa')
+            expect(body.text).toContain('Corporación Galpa 2022 C.A.')
         })
 
         it('includes the receipt link once the payment is verified', async () => {
@@ -231,7 +231,7 @@ describe('Customer communication: access links, WhatsApp messages and receipts (
                 {
                     field: 'whatsappTemplate',
                     errors: [
-                        'El mensaje de WhatsApp usa un marcador desconocido: {cliente}. Solo se admiten {nombre}, {pedido}, {enlace}, {total}, {motivo}, {marca}, {envio}, {comprobante}.',
+                        'El mensaje de WhatsApp usa un marcador desconocido: {cliente}. Solo se admiten {nombre}, {pedido}, {enlace}, {total}, {metodo}, {motivo}, {marca}, {envio}, {comprobante}.',
                     ],
                 },
             ])

@@ -1,20 +1,21 @@
 services:
     postgres:
         image: postgres:17
-        container_name: manada-russo-postgres
+        container_name: galpa-postgres
         restart: unless-stopped
         environment:
-            POSTGRES_DB: manada_russo
-            POSTGRES_USER: manada
-            POSTGRES_PASSWORD: manada
+            POSTGRES_DB: galpa
+            POSTGRES_USER: galpa
+            POSTGRES_PASSWORD: galpa
         ports:
-            # Host port 5440 avoids clashing with locally installed Postgres servers (WSL 5432, Windows 5432/5433).
-            # Override with POSTGRES_PORT and keep the port in DATABASE_URL in sync.
-            - '${POSTGRES_PORT:-5440}:5432'
+            # Host port 5441 avoids clashing with locally installed Postgres servers (5432/5433)
+            # and other projects' containers. Override with POSTGRES_PORT and keep the port in
+            # DATABASE_URL in sync.
+            - '${POSTGRES_PORT:-5441}:5432'
         volumes:
-            - postgres-data:/var/lib/postgresql/data
+            - galpa-postgres-data:/var/lib/postgresql/data
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U manada -d manada_russo']
+            test: ['CMD-SHELL', 'pg_isready -U galpa -d galpa']
             interval: 5s
             timeout: 5s
             retries: 10
@@ -23,11 +24,11 @@ services:
     # inboxes). Web UI http://localhost:8025, SMTP localhost:1025, no login.
     mailpit:
         image: axllent/mailpit:latest
-        container_name: manada-russo-mailpit
+        container_name: galpa-mailpit
         restart: unless-stopped
         ports:
             - '${MAILPIT_SMTP_PORT:-1025}:1025'
             - '${MAILPIT_UI_PORT:-8025}:8025'
 
 volumes:
-    postgres-data:
+    galpa-postgres-data:

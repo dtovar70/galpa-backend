@@ -17,6 +17,7 @@ import { ExchangeRateModule } from './exchange-rate/exchange-rate.module.js'
 import { HealthController } from './health/health.controller.js'
 import { OrdersModule } from './orders/orders.module.js'
 import { ProductsModule } from './products/products.module.js'
+import { QuotesModule } from './quotes/quotes.module.js'
 import { StorageModule } from './storage/storage.module.js'
 import { TelegramModule } from './telegram/telegram.module.js'
 import { UsersModule } from './users/users.module.js'
@@ -41,6 +42,7 @@ import { UsersModule } from './users/users.module.js'
         ContentModule,
         ExchangeRateModule,
         OrdersModule,
+        QuotesModule,
         TelegramModule,
         UsersModule,
         PasswordResetModule,

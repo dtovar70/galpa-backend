@@ -21,10 +21,10 @@ describe('Contact form without Telegram (e2e)', () => {
     }
 
     const form = (overrides: Record<string, unknown> = {}) => ({
-        fullName: 'Ana Pérez',
+        name: 'Ana Pérez',
         email: 'ana@example.com',
-        topic: 'personalizado',
-        message: 'Quiero 20 tazas con el logo de mi empresa.',
+        topic: 'ASESORIA',
+        message: 'Necesito climatizar una oficina de 40 m².',
         ...overrides,
     })
     const send = (body: unknown) =>
@@ -67,10 +67,13 @@ describe('Contact form without Telegram (e2e)', () => {
 
     it('validates every field with Spanish messages', async () => {
         const { body } = await send({
-            fullName: 'A',
+            name: 'A',
             email: 'no-es-correo',
             phone: '4141234567',
             topic: 'spam',
+            spaceType: 'INDUSTRIAL',
+            areaM2: 9000,
+            productSlug: 'No Es Slug',
             message: 'Hola',
             extra: true,
         }).expect(400)
@@ -78,15 +81,28 @@ describe('Contact form without Telegram (e2e)', () => {
             (body.details as { field: string; errors: string[] }[]).map((d) => [d.field, d.errors]),
         )
         expect(fields).toEqual({
-            fullName: ['Escribe tu nombre y apellido.'],
+            name: ['Escribe tu nombre y apellido.'],
             email: ['El correo debe ser un correo válido, por ejemplo hola@correo.com.'],
             phone: ['Escribe un celular válido, por ejemplo 0412-5550134.'],
             topic: ['El tema no es válido.'],
+            spaceType: ['El tipo de espacio no es válido.'],
+            areaM2: ['El área en metros cuadrados no puede ser mayor que 5.000.'],
+            productSlug: ['El producto no es válido.'],
             message: ['Cuéntanos un poco más, al menos 15 caracteres.'],
             extra: ['El campo "extra" no está permitido.'],
         })
 
         await send(form({ message: 'x'.repeat(601) })).expect(400)
+        const nameless = await send(form({ name: undefined })).expect(400)
+        expect(nameless.body.details[0].field).toBe('name')
+    })
+
+    it('accepts the advisory fields and the older `fullName` field', async () => {
+        // Valid: reaches the delivery check (503 here, nobody can receive it).
+        await send(
+            form({ spaceType: 'COMERCIAL', areaM2: 45, productSlug: 'split-daikin-9000' }),
+        ).expect(503)
+        await send(form({ name: undefined, fullName: 'Ana Pérez' })).expect(503)
     })
 
     it('refuses a WhatsApp on an inactive operator code on the phone field', async () => {
