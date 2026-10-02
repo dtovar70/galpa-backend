@@ -67,7 +67,7 @@ describe('single-line text limit (100 characters)', () => {
     })
 
     it('applies to the category tagline and the login email', async () => {
-        const category = { name: 'Aires Split', colorHex: '#10B981' }
+        const category = { name: 'Aires Split', colorHex: '#0B6FB8' }
         expect(
             await errorsOn(CreateCategoryDto, { ...category, tagline: tooLong }, 'tagline'),
         ).toContain('El eslogan de la categoría no puede superar los 100 caracteres.')

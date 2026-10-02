@@ -19,13 +19,6 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
             'Aires acondicionados split, piso-techo y cassette, repuestos y accesorios de las mejores marcas. Asesoría personalizada, equipos en stock y bajo pedido, envío gratis desde {envioGratis}.',
         searchPlaceholder: 'Buscar equipos, marcas, repuestos…',
     },
-    announcements: {
-        messages: [
-            'Envío gratis desde {envioGratis}',
-            'Asesoría gratuita para elegir tu equipo',
-            '30 años climatizando tus espacios',
-        ],
-    },
     home: {
         heroBadge: '30 años de experiencia',
         heroTitle: 'El clima ideal para tu *hogar* y tu *negocio*',

@@ -37,7 +37,7 @@ function setup(options: { exists?: boolean; productCount?: number; maxSortOrder?
     return { service, categories, products }
 }
 
-const INPUT = { name: 'Ventiladores de Techo', colorHex: '#10B981' }
+const INPUT = { name: 'Ventiladores de Techo', colorHex: '#0B6FB8' }
 
 describe('CategoriesService.create', () => {
     it('derives the slug from the name and appends the category at the end', async () => {

@@ -119,7 +119,7 @@ export function ContentText(field: FieldName, rules: TextRules): PropertyDecorat
 export interface TextListRules extends TextRules {
     minItems: number
     maxItems: number
-    /** Names one item for its messages: (2) -> "El anuncio 2". */
+    /** Names one item for its messages: (2) -> "El párrafo 2". */
     item: (position: number) => FieldName
 }
 

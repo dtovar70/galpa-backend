@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url'
 import PDFDocument from 'pdfkit'
 
 /**
- * Shared look of the generated PDFs (purchase receipt, quote): Galpa palette, Plus Jakarta Sans
- * for text and headings, Space Grotesk for figures (prices, codes, BTU), the vector logo mark
- * and the page footers.
+ * Shared look of the generated PDFs (purchase receipt, quote): the "Brisa" palette (primary
+ * blue, navy ink, light blue panels), Manrope for text, headings and figures (prices, codes,
+ * BTU), the vector logo mark and the page footers.
  */
 
 /**
@@ -16,11 +16,11 @@ import PDFDocument from 'pdfkit'
 const ASSETS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets')
 
 const FONT_FILES = {
-    regular: 'fonts/PlusJakartaSans-Regular.ttf',
-    semibold: 'fonts/PlusJakartaSans-SemiBold.ttf',
-    bold: 'fonts/PlusJakartaSans-Bold.ttf',
-    figures: 'fonts/SpaceGrotesk-Medium.ttf',
-    figuresBold: 'fonts/SpaceGrotesk-Bold.ttf',
+    regular: 'fonts/Manrope-Regular.ttf',
+    semibold: 'fonts/Manrope-SemiBold.ttf',
+    bold: 'fonts/Manrope-Bold.ttf',
+    figures: 'fonts/Manrope-SemiBold.ttf',
+    figuresBold: 'fonts/Manrope-ExtraBold.ttf',
 } as const
 
 /** Built-in PDF fonts, used if a TTF is missing (they lack "–" and a few other glyphs). */
@@ -33,14 +33,18 @@ const FALLBACK_FONTS: Record<keyof typeof FONT_FILES, string> = {
 }
 
 export const PDF_COLOR = {
-    ink: '#0A0F0D',
-    soft: '#5B6660',
-    line: '#E3EAE6',
-    brand: '#10B981',
-    brandStrong: '#059669',
-    brandSoft: '#D1FAE5',
-    surface: '#F3F8F5',
-    frost: '#38BDF8',
+    ink: '#0F2537',
+    soft: '#557086',
+    line: '#DCE9F3',
+    brand: '#0B6FB8',
+    brandStrong: '#085A96',
+    brandSoft: '#E1F0FB',
+    surface: '#EEF6FC',
+    frost: '#7CC4EC',
+    /** The logo's first air wave. */
+    frostSoft: '#BDE3F8',
+    success: '#047857',
+    successSoft: '#D1FAE5',
     warning: '#B45309',
     warningSoft: '#FEF3C7',
 } as const
@@ -287,24 +291,31 @@ export function contactLine(contact: {
         .join('  ·  ')
 }
 
-/** The logo mark drawn as vectors: a green rounded square with a white "G" and a frost dot. */
+/**
+ * The logo mark drawn as vectors, the same drawing as the storefront's favicon: a white split
+ * unit blowing two waves of air on a blue tile (64-unit grid, scaled to `size`).
+ */
 function drawLogoMark(
     doc: PdfDoc,
-    fonts: Record<PdfFontKey, string>,
+    _fonts: Record<PdfFontKey, string>,
     x: number,
     y: number,
     size: number,
 ): void {
+    const scale = size / 64
     doc.save()
-    doc.roundedRect(x, y, size, size, size * 0.24)
-        .fillColor(PDF_COLOR.brand)
-        .fill()
-    doc.font(fonts.bold)
-        .fontSize(size * 0.62)
-        .fillColor('#FFFFFF')
-        .text('G', x, y + size * 0.14, { width: size, align: 'center', lineBreak: false })
-    doc.circle(x + size * 0.78, y + size * 0.22, size * 0.07)
-        .fillColor(PDF_COLOR.frost)
-        .fill()
+    doc.translate(x, y).scale(scale)
+    doc.roundedRect(0, 0, 64, 64, 16).fillColor(PDF_COLOR.brand).fill()
+    doc.lineCap('round').lineJoin('round')
+    doc.roundedRect(9, 13, 46, 19, 6).lineWidth(4).strokeColor('#FFFFFF').stroke()
+    doc.path('M17 26H47').lineWidth(3).strokeColor('#FFFFFF').stroke()
+    doc.path('M15 41C19 38 23 44 27 41S35 38 39 41S47 44 49 41')
+        .lineWidth(3.5)
+        .strokeColor(PDF_COLOR.frostSoft)
+        .stroke()
+    doc.path('M21 50C24.5 47.5 28 52.5 31.5 50S38.5 47.5 43 50')
+        .lineWidth(3.5)
+        .strokeColor('#FFFFFF')
+        .stroke()
     doc.restore()
 }

@@ -13,6 +13,7 @@ import {
     configuredMethods,
     CONTENT_SECTIONS,
     isMethodConfigured,
+    type ContentSection,
     type PaymentContent,
 } from './content.types.js'
 import type { SiteContentEntry } from './entities/site-content.entity.js'
@@ -129,10 +130,14 @@ describe('mergeSection', () => {
 
 describe('ContentService', () => {
     it('getAll merges the stored sections over the defaults', async () => {
-        const { service } = setup([{ key: 'announcements', value: { messages: ['Solo hoy'] } }])
+        // A row of a retired section (e.g. left by an older version) is ignored, not returned.
+        const { service } = setup([
+            { key: 'about', value: { paragraphs: ['Solo hoy'] } },
+            { key: 'retired' as ContentSection, value: { messages: ['Viejo'] } },
+        ])
         const content = await service.getAll()
         expect(Object.keys(content)).toEqual([...CONTENT_SECTIONS])
-        expect(content.announcements.messages).toEqual(['Solo hoy'])
+        expect(content.about.paragraphs).toEqual(['Solo hoy'])
         expect(content.home).toEqual(DEFAULT_SITE_CONTENT.home)
     })
 
@@ -348,20 +353,22 @@ describe('ContentService', () => {
 
     it('checks list sizes and names the offending item', async () => {
         const { service } = setup()
-        expect(await detailsOf(service.update('announcements', { messages: [] }, USER))).toEqual([
+        const about = (paragraphs: string[]) => ({ ...DEFAULT_SITE_CONTENT.about, paragraphs })
+        expect(await detailsOf(service.update('about', about([]), USER))).toEqual([
             {
-                field: 'messages',
-                errors: ['La lista de anuncios debe tener al menos 1 elemento.'],
+                field: 'paragraphs',
+                errors: ['La lista de párrafos debe tener al menos 1 elemento.'],
             },
         ])
-        expect(
-            await detailsOf(
-                service.update('announcements', { messages: ['Hola', '   ', 'x'] }, USER),
-            ),
-        ).toEqual([{ field: 'messages', errors: ['El anuncio 2 es obligatorio.'] }])
-        const nine = Array.from({ length: 9 }, (_, index) => `Anuncio ${index}`)
-        expect(await detailsOf(service.update('announcements', { messages: nine }, USER))).toEqual([
-            { field: 'messages', errors: ['La lista de anuncios admite como máximo 8 elementos.'] },
+        expect(await detailsOf(service.update('about', about(['Hola', '   ', 'x']), USER))).toEqual(
+            [{ field: 'paragraphs', errors: ['El párrafo 2 es obligatorio.'] }],
+        )
+        const seven = Array.from({ length: 7 }, (_, index) => `Párrafo ${index}`)
+        expect(await detailsOf(service.update('about', about(seven), USER))).toEqual([
+            {
+                field: 'paragraphs',
+                errors: ['La lista de párrafos admite como máximo 6 elementos.'],
+            },
         ])
     })
 
@@ -449,14 +456,16 @@ describe('ContentService', () => {
         const { service } = setup()
         expect(
             await detailsOf(
-                service.update('announcements', { messages: ['Gratis desde {envio}'] }, USER),
+                service.update(
+                    'about',
+                    { ...DEFAULT_SITE_CONTENT.about, paragraphs: ['Desde {envio}'] },
+                    USER,
+                ),
             ),
         ).toEqual([
             {
-                field: 'messages',
-                errors: [
-                    'El anuncio 1 usa {envio}, que no existe. Puedes usar {envioGratis}, {tarifaEnvio}.',
-                ],
+                field: 'paragraphs',
+                errors: ['El párrafo 1 usa {envio}, que no existe. Puedes usar {marca}, {ciudad}.'],
             },
         ])
 

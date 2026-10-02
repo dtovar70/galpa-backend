@@ -247,9 +247,9 @@ class ReceiptLayout extends BrandedLayout {
         this.font('semibold', 8)
         const badgeWidth = doc.widthOfString(badge) + 16
         doc.roundedRect(left + paymentWidth - 12 - badgeWidth, top + 9, badgeWidth, 16, 8)
-            .fillColor(PDF_COLOR.brandSoft)
+            .fillColor(PDF_COLOR.successSoft)
             .fill()
-        this.font('semibold', 8, PDF_COLOR.brandStrong).text(
+        this.font('semibold', 8, PDF_COLOR.success).text(
             badge,
             left + paymentWidth - 12 - badgeWidth,
             top + 13,

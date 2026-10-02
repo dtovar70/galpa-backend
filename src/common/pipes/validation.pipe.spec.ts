@@ -101,7 +101,7 @@ describe('createValidationPipe', () => {
             'El slug solo admite minúsculas, números y guiones.',
         ])
         expect(errorsOf(details, 'colorHex')).toEqual([
-            'El color de la categoría debe tener formato hexadecimal, por ejemplo #10B981.',
+            'El color de la categoría debe tener formato hexadecimal, por ejemplo #0B6FB8.',
         ])
         expect(errorsOf(details, 'sortOrder')).toEqual([
             'La posición de la categoría no puede ser negativa.',

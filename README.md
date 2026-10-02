@@ -141,8 +141,8 @@ lines and, with a pending or verified payment, asks whether money must be refund
 conflicts (an expired order paid late without enough stock) must be acknowledged before
 confirming the payment.
 
-**Receipt.** `GET /orders/:code/receipt.pdf?t=` (and the admin copy): a branded A4 PDF (Plus
-Jakarta Sans and Space Grotesk, Galpa palette) with the payment method and its details, available
+**Receipt.** `GET /orders/:code/receipt.pdf?t=` (and the admin copy): a branded A4 PDF (Manrope,
+Brisa palette) with the payment method and its details, available
 once a payment is verified (not for cancelled orders), with a QR to the customer's order page.
 
 ## Quotes

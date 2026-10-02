@@ -87,7 +87,7 @@ export class FakeDb {
             name: slug,
             tagline: '',
             description: '',
-            colorHex: '#10B981',
+            colorHex: '#0B6FB8',
             icon: null,
             sortOrder: 0,
         })

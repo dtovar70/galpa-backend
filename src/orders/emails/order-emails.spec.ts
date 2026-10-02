@@ -118,7 +118,7 @@ describe('order emails', () => {
         expect(html).toContain('Split &lt;Inverter&gt; 12.000 BTU')
         expect(html).not.toContain('<Inverter>')
         expect(html).toContain(`href="${LINK}"`)
-        expect(html).toContain('#10B981')
+        expect(html).toContain('#0B6FB8')
     })
 
     it('a Zelle order asks for the dollar total and shows the Zelle account', () => {

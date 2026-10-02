@@ -14,7 +14,6 @@ import { PAYMENT_METHODS, type PaymentMethod } from '../common/payment-methods.j
 
 export const CONTENT_SECTIONS = [
     'general',
-    'announcements',
     'home',
     'about',
     'contact',
@@ -71,11 +70,6 @@ export interface GeneralContent {
     /** `<meta name="description">`. Accepts {envioGratis}. */
     metaDescription: string
     searchPlaceholder: string
-}
-
-export interface AnnouncementsContent {
-    /** Ticker messages, in order. Accept {envioGratis} and {tarifaEnvio}. */
-    messages: string[]
 }
 
 export interface HomeStep {
@@ -242,7 +236,6 @@ export interface PaymentContent {
 
 export interface SiteContent {
     general: GeneralContent
-    announcements: AnnouncementsContent
     home: HomeContent
     about: AboutContent
     contact: ContactContent

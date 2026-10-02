@@ -35,18 +35,18 @@ export interface RenderedEmail {
     text: string
 }
 
-/** Galpa palette: brand green on a frost-white page, ink-black text. */
+/** "Brisa" palette: primary blue on a very light blue page, navy text. */
 const COLOR = {
-    ink: '#0A0F0D',
-    inkSoft: '#5B6660',
-    line: '#E3EAE6',
-    surface: '#F3F8F5',
-    page: '#ECF5F0',
-    button: '#059669',
-    accent: '#10B981',
+    ink: '#0F2537',
+    inkSoft: '#557086',
+    line: '#DCE9F3',
+    surface: '#EEF6FC',
+    page: '#F3F9FE',
+    button: '#0B6FB8',
+    accent: '#0B6FB8',
     white: '#FFFFFF',
 }
-const FONT = "'Plus Jakarta Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+const FONT = "Manrope, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
 /** Escapes text for HTML content and attribute values. */
 export function escapeHtml(value: string): string {

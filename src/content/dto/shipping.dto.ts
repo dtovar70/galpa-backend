@@ -11,11 +11,11 @@ export class ShippingContentDto implements ShippingContent {
     flatRate: number
 
     @ContentText(masculine('El texto de envío gratis'), {
-        max: MAX.announcement,
+        max: MAX.shippingCopy,
         placeholders: ['envioGratis'],
     })
     freeShippingCopy: string
 
-    @ContentText(masculine('El tiempo de despacho'), { max: MAX.announcement })
+    @ContentText(masculine('El tiempo de despacho'), { max: MAX.shippingCopy })
     dispatchCopy: string
 }

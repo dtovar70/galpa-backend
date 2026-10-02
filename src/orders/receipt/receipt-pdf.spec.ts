@@ -78,8 +78,8 @@ describe('receipt PDF', () => {
         expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
         expect(pageCount(pdf)).toBe(1)
         const raw = pdf.toString('latin1')
-        expect(raw).toContain('PlusJakartaSans')
-        expect(raw).toContain('SpaceGrotesk')
+        expect(raw).toContain('Manrope-Regular')
+        expect(raw).toContain('Manrope-ExtraBold')
         expect(raw).toContain('/MediaBox [0 0 595.28 841.89]')
     })
 
