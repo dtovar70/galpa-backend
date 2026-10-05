@@ -71,7 +71,7 @@ describe('Contact form without Telegram (e2e)', () => {
             email: 'no-es-correo',
             phone: '4141234567',
             topic: 'spam',
-            spaceType: 'INDUSTRIAL',
+            spaceType: 'industrial',
             areaM2: 9000,
             productSlug: 'No Es Slug',
             message: 'Hola',
@@ -95,6 +95,19 @@ describe('Contact form without Telegram (e2e)', () => {
         await send(form({ message: 'x'.repeat(601) })).expect(400)
         const nameless = await send(form({ name: undefined })).expect(400)
         expect(nameless.body.details[0].field).toBe('name')
+    })
+
+    it('accepts only active topics and space types of the catalog', async () => {
+        for (const [overrides, field, message] of [
+            [{ topic: 'INEXISTENTE' }, 'topic', 'El tema no es válido.'],
+            [{ topic: 'GARANTIA' }, 'topic', 'El tema no es válido.'],
+            [{ spaceType: 'INDUSTRIAL' }, 'spaceType', 'El tipo de espacio no es válido.'],
+        ] as const) {
+            const { body } = await send(form(overrides)).expect(400)
+            expect(body.details).toEqual([{ field, errors: [message] }])
+        }
+        // An empty space type counts as not sent.
+        await send(form({ spaceType: '' })).expect(503)
     })
 
     it('accepts the advisory fields and the older `fullName` field', async () => {

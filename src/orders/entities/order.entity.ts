@@ -13,6 +13,7 @@ import {
 } from 'typeorm'
 import { CATALOG_CODE_MAX_LENGTH } from '../../catalogs/dto/field-names.js'
 import { OrderStatusDefinition } from '../../catalogs/entities/order-status-definition.entity.js'
+import { PaymentMethodDefinition } from '../../catalogs/entities/payment-method-definition.entity.js'
 import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
 import { ORDER_LIMITS } from '../dto/field-names.js'
 import { User } from '../../auth/entities/user.entity.js'
@@ -146,6 +147,15 @@ export class Order {
     /** Chosen at checkout; the customer may switch it while the order waits for a payment. */
     @Column({ name: 'payment_method', type: 'text' })
     paymentMethod: PaymentMethod
+
+    /** The method's catalog row (name, icon). The foreign key keeps every order on a known method. */
+    @ManyToOne(() => PaymentMethodDefinition, {
+        onDelete: 'RESTRICT',
+        onUpdate: 'CASCADE',
+        nullable: false,
+    })
+    @JoinColumn({ name: 'payment_method', foreignKeyConstraintName: 'orders_payment_method_fkey' })
+    paymentMethodDefinition: Relation<PaymentMethodDefinition>
 
     /** Some line is sold "bajo pedido" (the goods are ordered from the supplier after paying). */
     @Column({ name: 'has_on_order_items', type: 'boolean', default: false })

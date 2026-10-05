@@ -1,9 +1,11 @@
 import { BadRequestException, ConflictException } from '@nestjs/common'
 import type { ConfigService } from '@nestjs/config'
 import type { DataSource, EntityManager } from 'typeorm'
+import { quoteStatusRows } from '../../test/fixtures/catalogs.js'
 import { Role } from '../auth/role.enum.js'
 import type { AuthUser } from '../common/types/auth-user.js'
 import type { Env } from '../config/env.schema.js'
+import type { QuoteStatusCatalogService } from '../catalogs/quote-status-catalog.service.js'
 import type { ContentService } from '../content/content.service.js'
 import type { ExchangeRateService } from '../exchange-rate/exchange-rate.service.js'
 import type { MailService } from '../mail/mail.service.js'
@@ -123,12 +125,17 @@ function setup(current: Quote) {
         ),
     }
     const config = { get: vi.fn().mockReturnValue('https://api.galpa.com.ve') }
+    const labels = new Map(quoteStatusRows().map((row) => [row.code, row.label]))
+    const statusCatalog = {
+        labeler: vi.fn(() => Promise.resolve((code: string) => labels.get(code) ?? code)),
+    }
     const service = new QuotesService(
         dataSource as unknown as DataSource,
         {} as ContentService,
         {} as ExchangeRateService,
         {} as MailService,
         orders as unknown as OrdersService,
+        statusCatalog as unknown as QuoteStatusCatalogService,
         config as unknown as ConfigService<Env, true>,
     )
     return { service, orders, manager }

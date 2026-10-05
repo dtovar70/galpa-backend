@@ -7,6 +7,10 @@ export const CATALOG_DESCRIPTION_MAX_LENGTH = 300
 export const CATALOG_SORT_ORDER_MAX = 9999
 /** Longest WhatsApp message template of a status (a textarea; also a CHECK on the column). */
 export const WHATSAPP_TEMPLATE_MAX_LENGTH = 1000
+/** Longest code of a contact topic or space type (generated from the label). */
+export const CONTACT_OPTION_CODE_MAX_LENGTH = 40
+/** Most topics or space types a list may hold. */
+export const CONTACT_OPTIONS_MAX = 30
 
 /** Spanish names of the catalog fields, used to build validation messages. */
 export const CATALOG_FIELD = {
@@ -17,6 +21,7 @@ export const CATALOG_FIELD = {
     tone: masculine('El color'),
     whatsappTemplate: masculine('El mensaje de WhatsApp'),
     groupLabel: masculine('El nombre de la pestaña'),
+    quoteStatusDescription: feminine('La descripción del estado'),
     groupDescription: feminine('La descripción de la pestaña'),
     sortOrder: feminine('La posición'),
     bankCode: masculine('El código del banco'),
@@ -26,4 +31,11 @@ export const CATALOG_FIELD = {
     mobilePrefixCode: masculine('El código de celular'),
     mobilePrefixActive: masculine('El estado del código'),
     mobilePrefixCodes: feminine('La lista de códigos'),
+    paymentMethodLabel: masculine('El nombre del método de pago'),
+    paymentMethodDescription: feminine('La descripción del método de pago'),
+    paymentMethodIcon: masculine('El ícono'),
+    paymentMethodCodes: feminine('La lista de métodos de pago'),
+    contactOptionLabel: masculine('El nombre de la opción'),
+    contactOptionActive: masculine('El estado de la opción'),
+    contactOptionCodes: feminine('La lista de opciones'),
 } as const

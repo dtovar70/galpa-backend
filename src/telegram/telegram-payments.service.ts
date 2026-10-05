@@ -7,6 +7,7 @@ import type { Readable } from 'node:stream'
 import { DataSource } from 'typeorm'
 import { User } from '../auth/entities/user.entity.js'
 import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.service.js'
+import { PaymentMethodCatalogService } from '../catalogs/payment-method-catalog.service.js'
 import type { Env } from '../config/env.schema.js'
 import { PAYMENT_METHOD_CURRENCY } from '../common/payment-methods.js'
 import { AdminOrdersService } from '../orders/admin-orders.service.js'
@@ -121,6 +122,7 @@ export class TelegramPaymentsService {
         private readonly telegram: TelegramBotService,
         private readonly store: TelegramStoreService,
         private readonly catalog: OrderStatusCatalogService,
+        private readonly methods: PaymentMethodCatalogService,
         private readonly adminOrders: AdminOrdersService,
         private readonly whatsapp: OrderWhatsAppService,
         config: ConfigService<Env, true>,
@@ -151,6 +153,7 @@ export class TelegramPaymentsService {
         if (!order) return null
         const items = [...(order.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder)
         const currency = PAYMENT_METHOD_CURRENCY[payment.method]
+        const methodLabel = await this.methods.labeler()
         return {
             order,
             payment,
@@ -165,7 +168,7 @@ export class TelegramPaymentsService {
                 exchangeRate: order.exchangeRate,
                 stockConflict: order.stockConflict,
                 payment: {
-                    method: payment.method,
+                    methodLabel: methodLabel(payment.method),
                     currency,
                     reference: payment.reference,
                     payerBankCode: payment.payerBankCode,
@@ -404,6 +407,7 @@ export class TelegramPaymentsService {
         if (!order) return
         const items = [...(order.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder)
         const url = this.adminUrl(order.code)
+        const methodLabel = await this.methods.labeler()
         let text = newOrderMessage({
             code: order.code,
             customerName: order.customerName,
@@ -411,7 +415,7 @@ export class TelegramPaymentsService {
             totalBs: order.totalBs,
             itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
             items,
-            paymentMethod: order.paymentMethod,
+            paymentMethodLabel: methodLabel(order.paymentMethod),
             wantsInstallation: order.wantsInstallation,
             paymentDueAt: order.paymentDueAt,
         })

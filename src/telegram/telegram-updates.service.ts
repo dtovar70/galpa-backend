@@ -11,6 +11,7 @@ import { InlineKeyboard, type Context } from 'grammy'
 import type { Message } from 'grammy/types'
 import { DataSource } from 'typeorm'
 import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.service.js'
+import { PaymentMethodCatalogService } from '../catalogs/payment-method-catalog.service.js'
 import { ORDER_LIMITS } from '../orders/dto/field-names.js'
 import { OrderPayment } from '../orders/entities/order-payment.entity.js'
 import { Order } from '../orders/entities/order.entity.js'
@@ -113,6 +114,7 @@ export class TelegramUpdatesService implements OnModuleInit {
         private readonly payments: TelegramPaymentsService,
         private readonly statuses: OrderStatusService,
         private readonly catalog: OrderStatusCatalogService,
+        private readonly methods: PaymentMethodCatalogService,
     ) {}
 
     onModuleInit(): void {
@@ -291,7 +293,10 @@ export class TelegramUpdatesService implements OnModuleInit {
                 return
             }
         }
-        const label = await this.catalog.labeler()
+        const [label, methodLabel] = await Promise.all([
+            this.catalog.labeler(),
+            this.methods.labeler(),
+        ])
         const latest = [...(order.payments ?? [])].sort(
             (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
         )[0]
@@ -312,7 +317,7 @@ export class TelegramUpdatesService implements OnModuleInit {
             deliveryMethod: order.deliveryMethod,
             latestPayment: latest
                 ? {
-                      method: latest.method,
+                      methodLabel: methodLabel(latest.method),
                       reference: latest.reference,
                       amount: paymentAmounts(latest).amount ?? 0,
                       currency: paymentAmounts(latest).currency,

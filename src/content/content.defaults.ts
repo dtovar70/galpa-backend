@@ -107,8 +107,8 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
         statsTitle: 'Nuestra trayectoria en *cifras*',
         stats: [
             { value: '30', label: 'años de experiencia' },
-            { value: '+10.000', label: 'equipos vendidos' },
-            { value: '+15', label: 'marcas disponibles' },
+            { value: '4', label: 'métodos de pago' },
+            { value: '2', label: 'líneas: residencial y comercial' },
         ],
     },
     contact: {
@@ -181,5 +181,11 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
         },
         zelle: { enabled: false, email: '', holderName: '' },
         binance: { enabled: false, payId: '', email: '', holderName: '' },
+    },
+    /** Admin only (not part of `GET /content`): what a new quote starts with. */
+    quotes: {
+        defaultValidityDays: 5,
+        defaultTerms:
+            'Precios en dólares, pagaderos en bolívares a la tasa BCV del día del pago. Disponibilidad sujeta a existencia; los equipos bajo pedido tienen el tiempo de entrega indicado. Garantía del fabricante.',
     },
 }

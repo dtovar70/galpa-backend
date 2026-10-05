@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import { OrderStatusCatalogService } from '../../catalogs/order-status-catalog.service.js'
-import { PAYMENT_METHOD_LABELS, paysInBolivars } from '../../common/payment-methods.js'
+import { PaymentMethodCatalogService } from '../../catalogs/payment-method-catalog.service.js'
+import { paysInBolivars } from '../../common/payment-methods.js'
 import type { AuthUser } from '../../common/types/auth-user.js'
 import { formatBs, formatUsd } from '../../common/utils/money-format.js'
 import { ContentService } from '../../content/content.service.js'
@@ -64,6 +65,7 @@ export class OrderWhatsAppService {
     constructor(
         @InjectDataSource() private readonly dataSource: DataSource,
         private readonly catalog: OrderStatusCatalogService,
+        private readonly methods: PaymentMethodCatalogService,
         private readonly content: ContentService,
         private readonly access: OrderAccessService,
     ) {}
@@ -79,9 +81,10 @@ export class OrderWhatsAppService {
         })
         if (!order) throw new NotFoundException(ORDER_NOT_FOUND)
 
-        const [template, label, content] = await Promise.all([
+        const [template, label, methodLabel, content] = await Promise.all([
             this.catalog.whatsappTemplate(order.status),
             this.catalog.labeler(),
+            this.methods.labeler(),
             this.content.getAll(),
         ])
         const used = usedPlaceholders(template)
@@ -102,7 +105,7 @@ export class OrderWhatsAppService {
             total: paysInBolivars(order.paymentMethod)
                 ? `${formatUsd(order.totalUsd)} (${formatBs(order.totalBs)})`
                 : formatUsd(order.totalUsd),
-            metodo: PAYMENT_METHOD_LABELS[order.paymentMethod],
+            metodo: methodLabel(order.paymentMethod),
             motivo: reason ? withoutFinalPunctuation(reason) : '',
             marca: content.general.brandName,
             envio: shippingNote

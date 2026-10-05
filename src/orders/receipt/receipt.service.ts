@@ -2,9 +2,10 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import { OrderStatusCatalogService } from '../../catalogs/order-status-catalog.service.js'
+import { PaymentMethodCatalogService } from '../../catalogs/payment-method-catalog.service.js'
 import { ContentService } from '../../content/content.service.js'
 import type { PdfFile } from '../../common/http/send-pdf.js'
-import { PAYMENT_METHOD_LABELS, paysInBolivars } from '../../common/payment-methods.js'
+import { paysInBolivars } from '../../common/payment-methods.js'
 import { formatDay } from '../../common/utils/caracas-date.js'
 import { formatBs, formatUsd } from '../../common/utils/money-format.js'
 import { RATE_SOURCE_LABELS } from '../../exchange-rate/providers/rate-provider.js'
@@ -85,6 +86,7 @@ export class ReceiptService {
         @InjectDataSource() private readonly dataSource: DataSource,
         private readonly access: OrderAccessService,
         private readonly catalog: OrderStatusCatalogService,
+        private readonly methods: PaymentMethodCatalogService,
         private readonly content: ContentService,
     ) {}
 
@@ -121,7 +123,11 @@ export class ReceiptService {
         const payment = verifiedPayment(payments)
         if (!payment) throw new ConflictException(RECEIPT_NOT_AVAILABLE)
 
-        const [content, label] = await Promise.all([this.content.getAll(), this.catalog.labeler()])
+        const [content, label, methodLabel] = await Promise.all([
+            this.content.getAll(),
+            this.catalog.labeler(),
+            this.methods.labeler(),
+        ])
         const orderQr = await orderQrPng(await linkFor(order), 360)
         const data: ReceiptData = {
             orderQr,
@@ -172,7 +178,7 @@ export class ReceiptService {
                 RATE_SOURCE_LABELS[order.exchangeRateSource] ?? order.exchangeRateSource,
             totalBs: order.totalBs,
             payment: {
-                methodLabel: PAYMENT_METHOD_LABELS[payment.method],
+                methodLabel: methodLabel(payment.method),
                 inBolivars: paysInBolivars(payment.method),
                 details: paymentDetailRows(payment),
             },

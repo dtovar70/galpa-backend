@@ -1,7 +1,7 @@
 /**
- * Colors an order status badge may take: the semantic variants of the storefront's `Badge`
- * component (frontend-galpa/src/components/ui/Badge.tsx). Enforced by a CHECK on
- * `order_statuses.tone`.
+ * Colors an order or quote status badge may take: the semantic variants of the storefront's
+ * `Badge` component (frontend-galpa/src/components/ui/Badge.tsx). Enforced by a CHECK on
+ * `order_statuses.tone` and `quote_statuses.tone`.
  */
 export const BADGE_TONES = [
     'brand',

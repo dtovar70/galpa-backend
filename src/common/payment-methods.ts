@@ -1,18 +1,13 @@
 /**
- * How a customer pays an order. Pago Móvil and transfers are paid in bolívares at the order's BCV
+ * How a customer pays an order. The names, help texts, icons and order people see live in the
+ * `payment_methods` table (`PaymentMethodCatalogService`); the codes and currencies stay here
+ * because checkout and payment validation depend on them. Pago Móvil and transfers are paid in bolívares at the order's BCV
  * rate (`totalBs`); Zelle and Binance in US dollars (`totalUsd`).
  */
 export const PAYMENT_METHODS = ['PAGO_MOVIL', 'TRANSFERENCIA', 'ZELLE', 'BINANCE'] as const
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
 
 export type PaymentCurrency = 'VES' | 'USD'
-
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-    PAGO_MOVIL: 'Pago Móvil',
-    TRANSFERENCIA: 'Transferencia bancaria',
-    ZELLE: 'Zelle',
-    BINANCE: 'Binance Pay',
-}
 
 export const PAYMENT_METHOD_CURRENCY: Record<PaymentMethod, PaymentCurrency> = {
     PAGO_MOVIL: 'VES',

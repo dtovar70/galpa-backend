@@ -36,6 +36,7 @@ const LINK = 'https://galpa.com.ve/pedido/GP-000123?t=tok_en'
 
 const ORDER: OrderReceivedData = {
     code: 'GP-000123',
+    paymentMethodLabel: 'Pago Móvil',
     customerName: 'Ana María <Pérez>',
     deliveryMethod: 'delivery',
     address: 'Av. Principal, casa 4',
@@ -123,7 +124,12 @@ describe('order emails', () => {
 
     it('a Zelle order asks for the dollar total and shows the Zelle account', () => {
         const { text, subject } = orderReceivedEmail(
-            { ...ORDER, paymentMethod: 'ZELLE', hasOnOrderItems: false },
+            {
+                ...ORDER,
+                paymentMethod: 'ZELLE',
+                paymentMethodLabel: 'Zelle',
+                hasOnOrderItems: false,
+            },
             PAYMENT,
             LINK,
             SHOP,
@@ -138,7 +144,13 @@ describe('order emails', () => {
 
     it('pickup has no address or shipping cost; an unconfigured method asks to write', () => {
         const { text } = orderReceivedEmail(
-            { ...ORDER, deliveryMethod: 'pickup', shippingUsd: 0, paymentMethod: 'BINANCE' },
+            {
+                ...ORDER,
+                deliveryMethod: 'pickup',
+                shippingUsd: 0,
+                paymentMethod: 'BINANCE',
+                paymentMethodLabel: 'Binance Pay',
+            },
             PAYMENT,
             LINK,
             { ...SHOP, contact: { ...CONTACT, whatsapp: '' } },

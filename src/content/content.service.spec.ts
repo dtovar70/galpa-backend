@@ -13,6 +13,7 @@ import {
     configuredMethods,
     CONTENT_SECTIONS,
     isMethodConfigured,
+    PUBLIC_CONTENT_SECTIONS,
     type ContentSection,
     type PaymentContent,
 } from './content.types.js'
@@ -136,9 +137,65 @@ describe('ContentService', () => {
             { key: 'retired' as ContentSection, value: { messages: ['Viejo'] } },
         ])
         const content = await service.getAll()
-        expect(Object.keys(content)).toEqual([...CONTENT_SECTIONS])
+        expect(Object.keys(content)).toEqual([...PUBLIC_CONTENT_SECTIONS])
         expect(content.about.paragraphs).toEqual(['Solo hoy'])
         expect(content.home).toEqual(DEFAULT_SITE_CONTENT.home)
+    })
+
+    it('getAll leaves out the admin-only sections; getAllForAdmin returns them', async () => {
+        const { service } = setup([
+            {
+                key: 'quotes',
+                value: { defaultValidityDays: 7, defaultTerms: 'Solo contado' },
+                updatedAt: new Date('2026-01-01T00:00:00Z'),
+                updatedBy: null,
+            },
+        ])
+        const content = await service.getAll()
+        expect(PUBLIC_CONTENT_SECTIONS).not.toContain('quotes')
+        expect(content).not.toHaveProperty('quotes')
+
+        const admin = await service.getAllForAdmin()
+        expect(Object.keys(admin)).toEqual([...CONTENT_SECTIONS])
+        expect(admin.quotes.value).toEqual({ defaultValidityDays: 7, defaultTerms: 'Solo contado' })
+        expect(admin.quotes.isDefault).toBe(false)
+    })
+
+    it('validates the quote defaults: whole days from 1 to 90 and terms up to 2000 characters', async () => {
+        const { service } = setup()
+        const quotes = DEFAULT_SITE_CONTENT.quotes
+        expect(quotes.defaultValidityDays).toBe(5)
+
+        for (const [days, message] of [
+            [0, 'El plazo de vigencia debe ser como mínimo 1.'],
+            [91, 'El plazo de vigencia no puede ser mayor que 90.'],
+            [7.5, 'El plazo de vigencia debe ser un número entero.'],
+        ] as const) {
+            expect(
+                await detailsOf(
+                    service.update('quotes', { ...quotes, defaultValidityDays: days }, USER),
+                ),
+            ).toEqual([{ field: 'defaultValidityDays', errors: [message] }])
+        }
+        expect(
+            await detailsOf(
+                service.update('quotes', { ...quotes, defaultTerms: 'x'.repeat(2001) }, USER),
+            ),
+        ).toEqual([
+            {
+                field: 'defaultTerms',
+                errors: ['El texto de las condiciones no puede superar los 2000 caracteres.'],
+            },
+        ])
+
+        for (const value of [
+            { defaultValidityDays: 1, defaultTerms: '' },
+            { defaultValidityDays: 90, defaultTerms: 'x'.repeat(2000) },
+        ]) {
+            await expect(service.update('quotes', value, USER)).resolves.toMatchObject({
+                section: 'quotes',
+            })
+        }
     })
 
     it('rejects unknown sections with 404', async () => {

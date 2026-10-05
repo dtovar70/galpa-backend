@@ -9,6 +9,10 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { Brackets, DataSource, In, type EntityManager } from 'typeorm'
+import {
+    QuoteStatusCatalogService,
+    type QuoteStatusLabeler,
+} from '../catalogs/quote-status-catalog.service.js'
 import type { PdfFile } from '../common/http/send-pdf.js'
 import type { AuthUser } from '../common/types/auth-user.js'
 import { caracasDay, formatDay } from '../common/utils/caracas-date.js'
@@ -39,9 +43,10 @@ import { sortedQuoteItems, toQuoteDto, type QuoteDto, type QuoteListDto } from '
 import {
     canTransitionQuote,
     CONVERTIBLE_QUOTE_STATUSES,
+    DELETABLE_QUOTE_STATUSES,
     EDITABLE_QUOTE_STATUSES,
+    findQuoteTransition,
     invalidQuoteTransitionMessage,
-    QUOTE_STATUS_LABELS,
     SENDABLE_QUOTE_STATUSES,
     type QuoteActor,
     type QuoteStatus,
@@ -88,6 +93,7 @@ export class QuotesService {
         private readonly rates: ExchangeRateService,
         private readonly mail: MailService,
         private readonly orders: OrdersService,
+        private readonly statusCatalog: QuoteStatusCatalogService,
         config: ConfigService<Env, true>,
     ) {
         this.apiUrl = config.get('PUBLIC_API_URL', { infer: true })
@@ -116,11 +122,17 @@ export class QuotesService {
             .take(QUOTES_PAGE_SIZE)
             .getManyAndCount()
         const full = await this.loadMany(rows.map((row) => row.id))
-        return { items: full.map(toQuoteDto), total, page, pageSize: QUOTES_PAGE_SIZE }
+        const label = await this.statusCatalog.labeler()
+        return {
+            items: full.map((quote) => toQuoteDto(quote, label)),
+            total,
+            page,
+            pageSize: QUOTES_PAGE_SIZE,
+        }
     }
 
     async get(code: string): Promise<QuoteDto> {
-        return toQuoteDto(await this.load(code))
+        return toQuoteDto(await this.load(code), await this.statusCatalog.labeler())
     }
 
     async create(dto: SaveQuoteDto, user: AuthUser): Promise<QuoteDto> {
@@ -148,7 +160,7 @@ export class QuotesService {
         })
         const created = await this.loadById(id)
         this.logger.log(`Quote ${created.code} created by ${user.id}`)
-        return toQuoteDto(created)
+        return toQuoteDto(created, await this.statusCatalog.labeler())
     }
 
     /** Replaces the whole quote (lines included); only while BORRADOR or ENVIADA. */
@@ -158,7 +170,7 @@ export class QuotesService {
             const quote = await this.lockByCode(manager, code)
             if (!EDITABLE_QUOTE_STATUSES.includes(quote.status)) {
                 throw new ConflictException(
-                    `Una cotización ${QUOTE_STATUS_LABELS[quote.status].toLowerCase()} ya no se puede editar.`,
+                    `Una cotización ${await this.lowerLabel(quote.status)} ya no se puede editar.`,
                 )
             }
             await manager.update(Quote, { id: quote.id }, await this.quoteFields(manager, dto))
@@ -185,7 +197,7 @@ export class QuotesService {
     async remove(code: string): Promise<void> {
         await this.dataSource.transaction(async (manager) => {
             const quote = await this.lockByCode(manager, code)
-            if (quote.status !== 'BORRADOR') {
+            if (!DELETABLE_QUOTE_STATUSES.includes(quote.status)) {
                 throw new ConflictException('Solo se pueden eliminar las cotizaciones en borrador.')
             }
             await manager.delete(Quote, { id: quote.id })
@@ -226,7 +238,7 @@ export class QuotesService {
         const quote = await this.load(code)
         if (!SENDABLE_QUOTE_STATUSES.includes(quote.status)) {
             throw new ConflictException(
-                `Una cotización ${QUOTE_STATUS_LABELS[quote.status].toLowerCase()} no se puede enviar.`,
+                `Una cotización ${await this.lowerLabel(quote.status)} no se puede enviar.`,
             )
         }
         if (!quote.customerEmail) {
@@ -269,7 +281,11 @@ export class QuotesService {
             if (locked.status === 'BORRADOR') {
                 if (!canTransitionQuote(locked.status, 'ENVIADA', 'admin')) {
                     throw new ConflictException(
-                        invalidQuoteTransitionMessage(locked.status, 'ENVIADA'),
+                        invalidQuoteTransitionMessage(
+                            locked.status,
+                            'ENVIADA',
+                            await this.statusCatalog.labeler(),
+                        ),
                     )
                 }
                 changes.status = 'ENVIADA'
@@ -299,7 +315,8 @@ export class QuotesService {
         user: AuthUser,
     ): Promise<{ orderCode: string; customerUrl: string }> {
         const quote = await this.load(code)
-        assertConvertible(quote)
+        const label = await this.statusCatalog.labeler()
+        assertConvertible(quote, label)
         if (!quote.customerEmail) {
             throw fieldError(
                 'customerEmail',
@@ -339,7 +356,7 @@ export class QuotesService {
             async (manager, order) => {
                 // Locked here so two conversions of the same quote never both succeed.
                 const locked = await this.lockByCode(manager, code)
-                assertConvertible(locked)
+                assertConvertible(locked, label)
                 await manager.update(
                     Quote,
                     { id: locked.id },
@@ -390,14 +407,25 @@ export class QuotesService {
         reason: string | null,
     ): Promise<void> {
         if (quote.status === to) return
-        if (!canTransitionQuote(quote.status, to, actor)) {
-            throw new ConflictException(invalidQuoteTransitionMessage(quote.status, to))
+        const rule = findQuoteTransition(quote.status, to, actor)
+        if (!rule) {
+            throw new ConflictException(
+                invalidQuoteTransitionMessage(quote.status, to, await this.statusCatalog.labeler()),
+            )
+        }
+        if (rule.requiresReason && !reason?.trim()) {
+            throw fieldError('reason', 'Indica el motivo de este cambio de estado.')
         }
         await manager.update(
             Quote,
             { id: quote.id },
             { status: to, statusReason: reason?.trim() || null },
         )
+    }
+
+    /** "convertida en pedido": the catalog label, for sentences about a status. */
+    private async lowerLabel(status: QuoteStatus): Promise<string> {
+        return (await this.statusCatalog.labeler())(status).toLowerCase()
     }
 
     private assertValidUntil(validUntil: string): void {
@@ -569,7 +597,10 @@ export class QuotesService {
 }
 
 /** 409 unless the quote may still become an order. */
-function assertConvertible(quote: Pick<Quote, 'status' | 'convertedOrderCode'>): void {
+function assertConvertible(
+    quote: Pick<Quote, 'status' | 'convertedOrderCode'>,
+    label: QuoteStatusLabeler,
+): void {
     if (quote.status === 'CONVERTIDA') {
         throw new ConflictException(
             quote.convertedOrderCode
@@ -579,7 +610,7 @@ function assertConvertible(quote: Pick<Quote, 'status' | 'convertedOrderCode'>):
     }
     if (!CONVERTIBLE_QUOTE_STATUSES.includes(quote.status)) {
         throw new ConflictException(
-            `Una cotización ${QUOTE_STATUS_LABELS[quote.status].toLowerCase()} no se puede convertir en pedido.`,
+            `Una cotización ${label(quote.status).toLowerCase()} no se puede convertir en pedido.`,
         )
     }
 }

@@ -14,9 +14,11 @@ import { DEFAULT_SITE_CONTENT } from './content.defaults.js'
 import {
     CONTENT_SECTIONS,
     isContentSection,
+    PUBLIC_CONTENT_SECTIONS,
     type ContactContent,
     type ContentSection,
     type PaymentContent,
+    type PublicSiteContent,
     type SiteContent,
 } from './content.types.js'
 import { CONTENT_SECTION_DTOS } from './dto/index.js'
@@ -84,16 +86,16 @@ export class ContentService {
         private readonly mobilePrefixes: MobilePrefixesService,
     ) {}
 
-    /** Every section, stored values merged over the defaults. */
-    async getAll(): Promise<SiteContent> {
+    /** The public sections (admin-only ones are left out), stored values over the defaults. */
+    async getAll(): Promise<PublicSiteContent> {
         const rows = await this.entries.find()
         const stored = new Map(rows.map((row) => [row.key, row.value]))
         return Object.fromEntries(
-            CONTENT_SECTIONS.map((section) => [
+            PUBLIC_CONTENT_SECTIONS.map((section) => [
                 section,
                 mergeSection(section, stored.get(section)),
             ]),
-        ) as unknown as SiteContent
+        ) as unknown as PublicSiteContent
     }
 
     async getAllForAdmin(): Promise<AdminContentDto> {

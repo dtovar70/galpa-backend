@@ -10,15 +10,18 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { fieldError } from '../auth/auth.service.js'
+import { ContactOptionsService } from '../catalogs/contact-options.service.js'
 import { MobilePrefixesService } from '../catalogs/mobile-prefixes.service.js'
 import type { Env } from '../config/env.schema.js'
 import { ContentService } from '../content/content.service.js'
+import { msg } from '../common/validation/messages.js'
 import { MailService } from '../mail/mail.service.js'
 import { Product } from '../products/entities/product.entity.js'
 import { TelegramContactService } from '../telegram/telegram-contact.service.js'
 import { SlidingWindowLimiter } from '../telegram/rate-limiter.js'
 import { contactInboxEmail } from './contact-email.js'
 import {
+    CONTACT_FIELD,
     CONTACT_EMAIL_LIMIT,
     CONTACT_TOO_MANY,
     CONTACT_UNAVAILABLE,
@@ -43,6 +46,7 @@ export class ContactService {
     constructor(
         private readonly telegram: TelegramContactService,
         private readonly mobilePrefixes: MobilePrefixesService,
+        private readonly options: ContactOptionsService,
         private readonly content: ContentService,
         private readonly mail: MailService,
         @InjectRepository(Product) private readonly products: Repository<Product>,
@@ -53,7 +57,8 @@ export class ContactService {
     }
 
     /**
-     * Accepts a message: 400 for a WhatsApp on an inactive operator code, 503 while neither
+     * Accepts a message: 400 for a topic or space type that is not active in the catalog or a
+     * WhatsApp on an inactive operator code, 503 while neither
      * Telegram nor the inbox can receive it, 429 past 3 messages per email every 15 minutes. A
      * filled honeypot is answered like a success and dropped.
      */
@@ -61,6 +66,15 @@ export class ContactService {
         if (dto.website) {
             this.logger.log('Contact form honeypot filled; message dropped')
             return
+        }
+        // The DTO checked the shape of the codes; they must be active options of the catalog.
+        const topicLabel = await this.options.activeLabel('topics', dto.topic)
+        if (topicLabel === null) throw fieldError('topic', msg.invalid(CONTACT_FIELD.topic))
+        const spaceTypeLabel = dto.spaceType
+            ? await this.options.activeLabel('spaceTypes', dto.spaceType)
+            : null
+        if (dto.spaceType && spaceTypeLabel === null) {
+            throw fieldError('spaceType', msg.invalid(CONTACT_FIELD.spaceType))
         }
         if (dto.phone) {
             // The DTO checked the shape ("0424-1234567"); the operator code must be active.
@@ -98,7 +112,9 @@ export class ContactService {
             email: dto.email,
             phone: dto.phone ?? null,
             topic: dto.topic,
+            topicLabel,
             spaceType: dto.spaceType ?? null,
+            spaceTypeLabel,
             areaM2: dto.areaM2 ?? null,
             product: product
                 ? {

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { TypeOrmModule } from '@nestjs/typeorm'
+import { CatalogsModule } from '../catalogs/catalogs.module.js'
 import { ContentModule } from '../content/content.module.js'
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module.js'
 import { MailModule } from '../mail/mail.module.js'
@@ -15,6 +16,7 @@ import { QuotesService } from './quotes.service.js'
 @Module({
     imports: [
         TypeOrmModule.forFeature([Quote, QuoteItem, QuoteAccessLink]),
+        CatalogsModule,
         ContentModule,
         ExchangeRateModule,
         MailModule,

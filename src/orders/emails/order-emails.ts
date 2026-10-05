@@ -1,4 +1,4 @@
-import { PAYMENT_METHOD_LABELS, paysInBolivars } from '../../common/payment-methods.js'
+import { paysInBolivars } from '../../common/payment-methods.js'
 import { formatCaracasDateTime, formatDay } from '../../common/utils/caracas-date.js'
 import { formatBs, formatUsd, formatVeNumber } from '../../common/utils/money-format.js'
 import {
@@ -44,6 +44,8 @@ export type OrderReceivedData = Pick<
     | 'exchangeRateDate'
     | 'paymentDueAt'
 > & {
+    /** The payment method's name in the catalog ("Pago Móvil"). */
+    paymentMethodLabel: string
     items: Pick<
         OrderItem,
         | 'productId'
@@ -161,7 +163,7 @@ function paymentRows(
 }
 
 function paymentBlocks(order: OrderReceivedData, payment: PaymentContent): EmailBlock[] {
-    const method = PAYMENT_METHOD_LABELS[order.paymentMethod]
+    const method = order.paymentMethodLabel
     if (!isMethodConfigured(payment, order.paymentMethod)) {
         return [
             {
@@ -214,7 +216,7 @@ export function orderReceivedEmail(
     shop: OrderEmailShop,
 ): OrderEmail {
     const deadline = formatCaracasDateTime(order.paymentDueAt)
-    const method = PAYMENT_METHOD_LABELS[order.paymentMethod]
+    const method = order.paymentMethodLabel
     const inBolivars = paysInBolivars(order.paymentMethod)
     const shipping =
         order.deliveryMethod === 'pickup'

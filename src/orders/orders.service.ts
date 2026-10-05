@@ -12,18 +12,15 @@ import { DataSource, In, type EntityManager } from 'typeorm'
 import { BanksService } from '../catalogs/banks.service.js'
 import { MobilePrefixesService } from '../catalogs/mobile-prefixes.service.js'
 import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.service.js'
-import {
-    paysInBolivars,
-    PAYMENT_METHOD_LABELS,
-    type PaymentMethod,
-} from '../common/payment-methods.js'
+import { PaymentMethodCatalogService } from '../catalogs/payment-method-catalog.service.js'
+import { paysInBolivars, type PaymentMethod } from '../common/payment-methods.js'
 import { addDays, caracasDay } from '../common/utils/caracas-date.js'
 import { ContentService } from '../content/content.service.js'
 import {
     configuredMethods,
     isMethodConfigured,
     type PaymentContent,
-    type SiteContent,
+    type PublicSiteContent,
 } from '../content/content.types.js'
 import { newId } from '../database/id.js'
 import { ExchangeRateService } from '../exchange-rate/exchange-rate.service.js'
@@ -217,6 +214,7 @@ export class OrdersService {
         private readonly rates: ExchangeRateService,
         private readonly statuses: OrderStatusService,
         private readonly catalog: OrderStatusCatalogService,
+        private readonly methods: PaymentMethodCatalogService,
         private readonly banks: BanksService,
         private readonly mobilePrefixes: MobilePrefixesService,
         private readonly access: OrderAccessService,
@@ -275,7 +273,7 @@ export class OrdersService {
         return {
             code: existing.code,
             accessToken: token,
-            order: toPublicOrder(full, await this.paymentContent(), await this.catalog.labeler()),
+            order: await this.toPublic(full, await this.paymentContent()),
             replayed: true,
         }
     }
@@ -331,7 +329,7 @@ export class OrdersService {
         return {
             code: order.code,
             accessToken: token,
-            order: toPublicOrder(order, content.payment, await this.catalog.labeler()),
+            order: await this.toPublic(order, content.payment),
             replayed: false,
         }
     }
@@ -392,7 +390,7 @@ export class OrdersService {
         details: NewOrderDetails,
         lines: readonly PreparedOrderLine[],
         context: {
-            content: SiteContent
+            content: PublicSiteContent
             rate: ExchangeRate
             discountCents: number
             idempotency: CheckoutIdempotency | null
@@ -522,11 +520,20 @@ export class OrdersService {
         return { order: created, token }
     }
 
+    /** The customer's view of an order, with the catalog's status and payment method names. */
+    private async toPublic(order: Order, payment: PaymentContent): Promise<PublicOrderDto> {
+        const [label, methodLabel] = await Promise.all([
+            this.catalog.labeler(),
+            this.methods.labeler(),
+        ])
+        return toPublicOrder(order, payment, label, methodLabel)
+    }
+
     /** The customer's order page. A wrong or missing token is a plain 404. */
     async getForCustomer(code: string, token: string | undefined): Promise<PublicOrderDto> {
         const order = await this.findAuthorized(code, token)
         const full = await this.loadFull(order.id)
-        return toPublicOrder(full, await this.paymentContent(), await this.catalog.labeler())
+        return this.toPublic(full, await this.paymentContent())
     }
 
     /**
@@ -614,6 +621,7 @@ export class OrdersService {
             if (phoneProblem) throw fieldError('payerPhone', phoneProblem)
         }
 
+        const methodName = (await this.methods.labeler())(dto.method)
         const proofKey = await this.storeProof(order.code, file)
         const pending: PendingOrderEvent[] = []
         try {
@@ -685,7 +693,7 @@ export class OrdersService {
                         paymentRecorded: true,
                         note: [
                             actor.kind === 'admin'
-                                ? `Pago por ${PAYMENT_METHOD_LABELS[dto.method]} registrado por la administración (comprobante recibido por WhatsApp).`
+                                ? `Pago por ${methodName} registrado por la administración (comprobante recibido por WhatsApp).`
                                 : null,
                             late ? 'Pago hecho después del plazo, según la fecha indicada.' : null,
                         ]

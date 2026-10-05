@@ -82,7 +82,9 @@ describe('Site content (e2e)', () => {
 
     it('GET /api/content is public, returns the defaults and is revalidated with an ETag', async () => {
         const response = await request(app.getHttpServer()).get('/api/content').expect(200)
-        expect(response.body).toEqual(DEFAULT_SITE_CONTENT)
+        const { quotes: _adminOnly, ...publicDefaults } = DEFAULT_SITE_CONTENT
+        expect(response.body).toEqual(publicDefaults)
+        expect(response.body).not.toHaveProperty('quotes')
         expect(response.headers['cache-control']).toBe('no-cache')
         expect(response.headers.etag).toBeDefined()
 
@@ -112,6 +114,57 @@ describe('Site content (e2e)', () => {
             isDefault: true,
             updatedAt: null,
             updatedBy: null,
+        })
+    })
+
+    it('GET /api/admin/content includes the admin-only quote defaults', async () => {
+        const response = await request(app.getHttpServer())
+            .get('/api/admin/content')
+            .set('Cookie', cookie('editor'))
+            .expect(200)
+        expect(response.body.quotes).toEqual({
+            section: 'quotes',
+            value: DEFAULT_SITE_CONTENT.quotes,
+            isDefault: true,
+            updatedAt: null,
+            updatedBy: null,
+        })
+    })
+
+    it('PUT quotes validates the validity days and the terms length', async () => {
+        const response = await request(app.getHttpServer())
+            .put('/api/admin/content/quotes')
+            .set('Cookie', cookie('editor'))
+            .send({ defaultValidityDays: 120, defaultTerms: 'x'.repeat(2001) })
+            .expect(400)
+        expect(response.body.details).toEqual([
+            {
+                field: 'defaultValidityDays',
+                errors: ['El plazo de vigencia no puede ser mayor que 90.'],
+            },
+            {
+                field: 'defaultTerms',
+                errors: ['El texto de las condiciones no puede superar los 2000 caracteres.'],
+            },
+        ])
+        expect(contentRepository.query).not.toHaveBeenCalled()
+
+        await request(app.getHttpServer())
+            .put('/api/admin/content/quotes')
+            .set('Cookie', cookie('editor'))
+            .send({ defaultValidityDays: 0, defaultTerms: '' })
+            .expect(400)
+
+        await request(app.getHttpServer())
+            .put('/api/admin/content/quotes')
+            .set('Cookie', cookie('editor'))
+            .send({ defaultValidityDays: 7, defaultTerms: '  Solo contado  ' })
+            .expect(200)
+        const [, params] = contentRepository.query.mock.calls[0] as [string, unknown[]]
+        expect(params[0]).toBe('quotes')
+        expect(JSON.parse(params[1] as string)).toEqual({
+            defaultValidityDays: 7,
+            defaultTerms: 'Solo contado',
         })
     })
 

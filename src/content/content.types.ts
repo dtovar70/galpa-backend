@@ -20,6 +20,7 @@ export const CONTENT_SECTIONS = [
     'contactPage',
     'shipping',
     'payment',
+    'quotes',
 ] as const
 
 export type ContentSection = (typeof CONTENT_SECTIONS)[number]
@@ -27,6 +28,24 @@ export type ContentSection = (typeof CONTENT_SECTIONS)[number]
 export function isContentSection(value: string): value is ContentSection {
     return (CONTENT_SECTIONS as readonly string[]).includes(value)
 }
+
+/**
+ * Internal settings edited in the admin panel but never shown on the storefront. `GET /content`
+ * leaves them out; only `GET /admin/content` returns them.
+ */
+export const ADMIN_ONLY_CONTENT_SECTIONS = ['quotes'] as const satisfies readonly ContentSection[]
+
+export type AdminOnlyContentSection = (typeof ADMIN_ONLY_CONTENT_SECTIONS)[number]
+
+export type PublicContentSection = Exclude<ContentSection, AdminOnlyContentSection>
+
+export function isPublicContentSection(section: ContentSection): section is PublicContentSection {
+    return !(ADMIN_ONLY_CONTENT_SECTIONS as readonly ContentSection[]).includes(section)
+}
+
+/** The sections of `GET /content`, in order. */
+export const PUBLIC_CONTENT_SECTIONS: readonly PublicContentSection[] =
+    CONTENT_SECTIONS.filter(isPublicContentSection)
 
 /** Placeholders and what they render. */
 export const CONTENT_PLACEHOLDERS = {
@@ -234,6 +253,18 @@ export interface PaymentContent {
     binance: BinanceContent
 }
 
+/** What a new quote starts with. Admin only: never part of the public content. */
+export interface QuotesContent {
+    /**
+     * Days the prices of a new quote are honored (1 to 90). Once that day passes, a sent quote
+     * the customer did not answer expires automatically.
+     */
+    defaultValidityDays: number
+    /** Terms and conditions a new quote starts with. Optional. */
+    defaultTerms: string
+}
+
+/** Every section, as the admin panel edits them. */
 export interface SiteContent {
     general: GeneralContent
     home: HomeContent
@@ -242,7 +273,11 @@ export interface SiteContent {
     contactPage: ContactPageContent
     shipping: ShippingContent
     payment: PaymentContent
+    quotes: QuotesContent
 }
+
+/** The storefront's content (`GET /content`): every section except the admin-only ones. */
+export type PublicSiteContent = Pick<SiteContent, PublicContentSection>
 
 /** The payment section's key of each method. */
 export const PAYMENT_METHOD_SECTIONS = {

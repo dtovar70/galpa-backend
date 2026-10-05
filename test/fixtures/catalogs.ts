@@ -1,14 +1,22 @@
 import { Bank } from '../../src/catalogs/entities/bank.entity.js'
+import {
+    ContactTopicOption,
+    SpaceTypeOption,
+} from '../../src/catalogs/entities/contact-option.entity.js'
 import { MobilePrefix } from '../../src/catalogs/entities/mobile-prefix.entity.js'
 import { OrderStatusDefinition } from '../../src/catalogs/entities/order-status-definition.entity.js'
 import { OrderStatusGroup } from '../../src/catalogs/entities/order-status-group.entity.js'
+import { PaymentMethodDefinition } from '../../src/catalogs/entities/payment-method-definition.entity.js'
+import { QuoteStatusDefinition } from '../../src/catalogs/entities/quote-status-definition.entity.js'
 import { ORDER_STATUSES } from '../../src/orders/order-status.js'
 import { DEFAULT_WHATSAPP_TEMPLATES } from '../../src/orders/whatsapp/whatsapp-template.js'
+import { QUOTE_STATUSES } from '../../src/quotes/quote-status.js'
 
 /**
- * The catalog rows the migration seeds, for the suites that stub the database. Only what the
- * tests read: admin labels, groups, a few banks (0104 is inactive) and the mobile operator codes
- * (0426 is inactive).
+ * The catalog rows the migrations seed, for the suites that stub the database. Only what the
+ * tests read: admin labels, groups, quote statuses, payment methods, a few banks (0104 is
+ * inactive), the mobile operator codes (0426 is inactive) and the contact form options (the
+ * extra topic GARANTIA and space type INDUSTRIAL are inactive).
  */
 const LABELS: Record<(typeof ORDER_STATUSES)[number], [label: string, group: string]> = {
     PENDIENTE_PAGO: ['Pendiente de pago', 'POR_PAGAR'],
@@ -54,6 +62,84 @@ export function orderStatusGroupRows(): OrderStatusGroup[] {
     )
 }
 
+const QUOTE_STATUS_ROWS: Record<
+    (typeof QUOTE_STATUSES)[number],
+    [label: string, tone: QuoteStatusDefinition['tone'], isTerminal: boolean]
+> = {
+    BORRADOR: ['Borrador', 'neutral', false],
+    ENVIADA: ['Enviada', 'info', false],
+    ACEPTADA: ['Aceptada', 'brand', false],
+    CONVERTIDA: ['Convertida en pedido', 'solid', true],
+    RECHAZADA: ['Rechazada', 'danger', true],
+    VENCIDA: ['Vencida', 'warning', false],
+}
+
+export function quoteStatusRows(): QuoteStatusDefinition[] {
+    return QUOTE_STATUSES.map((code, sortOrder) => {
+        const [label, tone, isTerminal] = QUOTE_STATUS_ROWS[code]
+        return {
+            code,
+            label,
+            description: `Qué significa «${label}».`,
+            tone,
+            sortOrder,
+            isTerminal,
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        }
+    })
+}
+
+export function paymentMethodRows(): PaymentMethodDefinition[] {
+    const rows = [
+        ['PAGO_MOVIL', 'Pago Móvil', 'En bolívares, a la tasa BCV del día.', 'smartphone'],
+        [
+            'TRANSFERENCIA',
+            'Transferencia bancaria',
+            'En bolívares, a la tasa BCV del día.',
+            'building',
+        ],
+        ['ZELLE', 'Zelle', 'En dólares, desde tu cuenta en EE. UU.', 'dollar-sign'],
+        ['BINANCE', 'Binance Pay', 'En dólares (USDT) con Binance Pay.', 'bitcoin'],
+    ] as const
+    return rows.map(([code, label, description, icon], sortOrder) => ({
+        code,
+        label,
+        description,
+        icon,
+        sortOrder,
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+    }))
+}
+
+function contactOptionRows(rows: readonly (readonly [string, string, boolean])[]) {
+    return rows.map(([code, label, isActive], sortOrder) => ({
+        code,
+        label,
+        isActive,
+        sortOrder,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+    }))
+}
+
+export function contactTopicRows(): ContactTopicOption[] {
+    return contactOptionRows([
+        ['ASESORIA', 'Quiero asesoría para elegir un equipo', true],
+        ['COTIZACION', 'Necesito una cotización', true],
+        ['SOPORTE', 'Soporte, repuestos o garantía', true],
+        ['OTRO', 'Otro tema', true],
+        ['GARANTIA', 'Garantía', false],
+    ])
+}
+
+export function spaceTypeRows(): SpaceTypeOption[] {
+    return contactOptionRows([
+        ['RESIDENCIAL', 'Residencial (hogar)', true],
+        ['COMERCIAL', 'Comercial (oficina, local, industria)', true],
+        ['INDUSTRIAL', 'Industrial', false],
+    ])
+}
+
 export function bankRows(): Bank[] {
     return [
         { code: '0102', name: 'Banco de Venezuela', isActive: true, sortOrder: 0 },
@@ -81,6 +167,10 @@ export function mobilePrefixRows(): MobilePrefix[] {
 export function catalogRows(entity: unknown): object[] | undefined {
     if (entity === OrderStatusDefinition) return orderStatusRows()
     if (entity === OrderStatusGroup) return orderStatusGroupRows()
+    if (entity === QuoteStatusDefinition) return quoteStatusRows()
+    if (entity === PaymentMethodDefinition) return paymentMethodRows()
+    if (entity === ContactTopicOption) return contactTopicRows()
+    if (entity === SpaceTypeOption) return spaceTypeRows()
     if (entity === Bank) return bankRows()
     if (entity === MobilePrefix) return mobilePrefixRows()
     return undefined

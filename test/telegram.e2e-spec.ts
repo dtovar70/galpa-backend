@@ -673,7 +673,7 @@ describe('Telegram bot (e2e, fake Bot API)', () => {
             expect(text).toContain('👤 Ana &lt;b&gt;Pérez&lt;/b&gt;')
             expect(text).toContain('✉️ ana@example.com')
             expect(text).toContain('📱 WhatsApp: 0414-1234567')
-            expect(text).toContain('🏷️ Solicitud de cotización')
+            expect(text).toContain('🏷️ Necesito una cotización')
             expect(text).toContain('Quiero 3 equipos &amp; &lt;cassette&gt; para mi oficina.')
             expect(first?.parse_mode).toBe('HTML')
             const [button] = buttons(first?.reply_markup)

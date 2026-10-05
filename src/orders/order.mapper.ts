@@ -1,6 +1,5 @@
 import {
     PAYMENT_METHOD_CURRENCY,
-    PAYMENT_METHOD_LABELS,
     paysInBolivars,
     type PaymentCurrency,
     type PaymentMethod,
@@ -23,6 +22,7 @@ import { amountDifference, type DeliveryMethod } from './order-pricing.js'
 import { hasReceipt } from './receipt/receipt-availability.js'
 import type { LiveStockConflict } from './stock-conflict.js'
 import type { StatusLabeler } from '../catalogs/order-status-catalog.service.js'
+import type { PaymentMethodLabeler } from '../catalogs/payment-method-catalog.service.js'
 import {
     METHOD_SWITCH_STATUSES,
     PAYABLE_STATUSES,
@@ -429,12 +429,16 @@ export function isLatePayment(order: Pick<Order, 'paymentDueAt'>, paidOn: string
     return paidOn > caracasDay(order.paymentDueAt)
 }
 
-/** `label` names each status (the catalog's admin label, see `OrderStatusCatalogService`). */
-/** `payment`: the store's current payment section (`GET /content`). */
+/**
+ * `label` names each status (the catalog's admin label, see `OrderStatusCatalogService`) and
+ * `methodLabel` each payment method (`PaymentMethodCatalogService`). `payment`: the store's
+ * current payment section (`GET /content`).
+ */
 export function toPublicOrder(
     order: Order,
     payment: PaymentContent,
     label: StatusLabeler,
+    methodLabel: PaymentMethodLabeler,
 ): PublicOrderDto {
     return {
         code: order.code,
@@ -445,7 +449,7 @@ export function toPublicOrder(
         canSubmitPayment: canSubmitPayment(order),
         canChangePaymentMethod: METHOD_SWITCH_STATUSES.includes(order.status),
         receiptAvailable: hasReceipt(order, order.payments ?? []),
-        ...methodFields(order),
+        ...methodFields(order, methodLabel),
         customer: toCustomer(order),
         items: sortedItems(order).map(toItem),
         totals: toTotals(order),
@@ -484,10 +488,10 @@ function toAdminNote(note: OrderNote): AdminNoteDto {
     }
 }
 
-function methodFields(order: Order) {
+function methodFields(order: Order, methodLabel: PaymentMethodLabeler) {
     return {
         paymentMethod: order.paymentMethod,
-        paymentMethodLabel: PAYMENT_METHOD_LABELS[order.paymentMethod],
+        paymentMethodLabel: methodLabel(order.paymentMethod),
         amountDue: amountDue(order),
         hasOnOrderItems: order.hasOnOrderItems,
         wantsInstallation: order.wantsInstallation,
@@ -503,6 +507,7 @@ export function toAdminOrder(
     order: Order,
     transitions: readonly TransitionRule[],
     label: StatusLabeler,
+    methodLabel: PaymentMethodLabeler,
     stockConflict: LiveStockConflict | null,
 ): AdminOrderDto {
     return {
@@ -517,7 +522,7 @@ export function toAdminOrder(
         latePayment: order.latePayment,
         stockConflict,
         receiptAvailable: hasReceipt(order, order.payments ?? []),
-        ...methodFields(order),
+        ...methodFields(order, methodLabel),
         refund: order.refundStatus
             ? {
                   status: order.refundStatus,
@@ -537,7 +542,7 @@ export function toAdminOrder(
             .map((payment) => ({
                 ...toPublicPayment(payment),
                 ...paymentFlags(payment),
-                methodLabel: PAYMENT_METHOD_LABELS[payment.method],
+                methodLabel: methodLabel(payment.method),
                 recordedBy: payment.recordedBy
                     ? { id: payment.recordedBy.id, name: payment.recordedBy.name }
                     : null,

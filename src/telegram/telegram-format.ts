@@ -13,15 +13,10 @@ import type {
 } from '../exchange-rate/exchange-rate.events.js'
 import type { StockConflict, StockConflictLine } from '../orders/entities/order.entity.js'
 import type { ContactMessageReceivedEvent } from '../contact/contact.events.js'
-import { CONTACT_TOPIC_LABELS, SPACE_TYPE_LABELS } from '../contact/contact.constants.js'
 import { firstName } from '../orders/whatsapp/whatsapp-template.js'
 import { stockItemName } from '../products/product-stock.js'
 import type { PaymentSource } from '../orders/entities/order-payment.entity.js'
-import {
-    PAYMENT_METHOD_LABELS,
-    type PaymentCurrency,
-    type PaymentMethod,
-} from '../common/payment-methods.js'
+import type { PaymentCurrency } from '../common/payment-methods.js'
 import type { StockMode } from '../products/products.constants.js'
 
 /** Moved to common/utils; re-exported for the bot's existing imports. */
@@ -84,7 +79,8 @@ export interface PaymentMessageData {
     exchangeRate: number
     stockConflict: StockConflict | null
     payment: {
-        method: PaymentMethod
+        /** The method's name in the catalog ("Pago Móvil"). */
+        methodLabel: string
         currency: PaymentCurrency
         reference: string
         payerBankCode: string | null
@@ -205,7 +201,7 @@ export function paymentDetailLines(payment: PaymentMessageData['payment']): stri
             ? [`Banco: ${escapeHtml(payment.payerBankName)} (${escapeHtml(payment.payerBankCode)})`]
             : []
     return [
-        `💳 <b>${PAYMENT_METHOD_LABELS[payment.method]}</b>`,
+        `💳 <b>${escapeHtml(payment.methodLabel)}</b>`,
         ...bank,
         ...optional('Titular', payment.payerName),
         ...optional('Cuenta', payment.payerAccount),
@@ -224,7 +220,8 @@ export interface NewOrderMessageData {
     totalBs: number
     itemCount: number
     items: readonly MessageItem[]
-    paymentMethod: PaymentMethod
+    /** The payment method's name in the catalog. */
+    paymentMethodLabel: string
     wantsInstallation: boolean
     paymentDueAt: Date
 }
@@ -235,7 +232,7 @@ export function newOrderMessage(data: NewOrderMessageData): string {
         `👤 ${escapeHtml(data.customerName)}`,
         itemLines(data.items).join('\n'),
         `💵 ${formatUsd(data.totalUsd)} · ${formatBs(data.totalBs)} · ${data.itemCount} ${data.itemCount === 1 ? 'artículo' : 'artículos'}`,
-        `💳 Pagará por ${PAYMENT_METHOD_LABELS[data.paymentMethod]}`,
+        `💳 Pagará por ${escapeHtml(data.paymentMethodLabel)}`,
         ...(data.wantsInstallation ? ['🔧 <b>Pide instalación</b>'] : []),
         `⏳ Esperando el pago hasta el ${formatCaracasDateTime(data.paymentDueAt)}`,
     ].join('\n')
@@ -252,7 +249,7 @@ export interface OrderSummaryData {
     createdAt: Date
     deliveryMethod: 'delivery' | 'pickup'
     latestPayment: {
-        method: PaymentMethod
+        methodLabel: string
         reference: string
         amount: number
         currency: PaymentCurrency
@@ -272,7 +269,7 @@ export function orderSummaryMessage(data: OrderSummaryData): string {
     ]
     if (data.latestPayment) {
         lines.push(
-            `💳 Último pago (${PAYMENT_METHOD_LABELS[data.latestPayment.method]}): ref. <code>${escapeHtml(data.latestPayment.reference)}</code> · ${formatAmount(data.latestPayment.amount, data.latestPayment.currency)} · ${escapeHtml(data.latestPayment.statusLabel)}`,
+            `💳 Último pago (${escapeHtml(data.latestPayment.methodLabel)}): ref. <code>${escapeHtml(data.latestPayment.reference)}</code> · ${formatAmount(data.latestPayment.amount, data.latestPayment.currency)} · ${escapeHtml(data.latestPayment.statusLabel)}`,
         )
     }
     return lines.join('\n')
@@ -320,16 +317,17 @@ const MAX_CONTACT_TEXT_LENGTH = 3500
  */
 export function contactMessage(event: ContactMessageReceivedEvent): string {
     const lines = [
-        event.topic === 'ASESORIA'
+        // The advisory form is the one that asks for the space.
+        event.spaceType !== null || event.areaM2 !== null
             ? '📨 <b>Nueva solicitud de asesoría</b>'
             : '📨 <b>Nuevo mensaje de contacto</b>',
         `👤 ${escapeHtml(event.fullName)}`,
         `✉️ ${escapeHtml(event.email)}`,
     ]
     if (event.phone) lines.push(`📱 WhatsApp: ${escapeHtml(event.phone)}`)
-    lines.push(`🏷️ ${escapeHtml(CONTACT_TOPIC_LABELS[event.topic])}`)
+    lines.push(`🏷️ ${escapeHtml(event.topicLabel)}`)
     const space = [
-        event.spaceType ? SPACE_TYPE_LABELS[event.spaceType] : null,
+        event.spaceTypeLabel,
         event.areaM2 !== null ? `${event.areaM2} m²` : null,
     ].filter(Boolean)
     if (space.length) lines.push(`🏠 Espacio: ${escapeHtml(space.join(' · '))}`)

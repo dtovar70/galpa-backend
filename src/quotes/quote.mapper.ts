@@ -1,6 +1,12 @@
+import type { QuoteStatusLabeler } from '../catalogs/quote-status-catalog.service.js'
 import type { Quote } from './entities/quote.entity.js'
 import type { QuoteItem } from './entities/quote-item.entity.js'
-import { QUOTE_STATUS_LABELS, type QuoteStatus } from './quote-status.js'
+import {
+    manualQuoteTransitions,
+    quoteCapabilities,
+    type QuoteCapabilities,
+    type QuoteStatus,
+} from './quote-status.js'
 
 export interface QuoteItemDto {
     id: string
@@ -17,8 +23,20 @@ export interface QuoteItemDto {
     sortOrder: number
 }
 
-/** A quote as the admin sees it (amounts in USD; `totalBs` is a reference). */
-export interface QuoteDto {
+/** A status the admin may move the quote to by hand ("Cambiar estado"). */
+export interface QuoteTransitionDto {
+    status: QuoteStatus
+    /** The catalog's admin label. */
+    label: string
+    requiresReason: boolean
+}
+
+/**
+ * A quote as the admin sees it (amounts in USD; `totalBs` is a reference). The status label,
+ * the manual moves and the `can*` flags come from the API, so the back office holds no status
+ * rules of its own.
+ */
+export interface QuoteDto extends QuoteCapabilities {
     id: string
     code: string
     status: QuoteStatus
@@ -43,6 +61,7 @@ export interface QuoteDto {
     convertedOrderCode: string | null
     createdAt: string
     updatedAt: string
+    allowedTransitions: QuoteTransitionDto[]
 }
 
 export interface QuoteListDto {
@@ -72,12 +91,13 @@ export function sortedQuoteItems(quote: Pick<Quote, 'items'>): QuoteItem[] {
     return [...(quote.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
-export function toQuoteDto(quote: Quote): QuoteDto {
+/** `label` names a status (the catalog's admin label). */
+export function toQuoteDto(quote: Quote, label: QuoteStatusLabeler): QuoteDto {
     return {
         id: quote.id,
         code: quote.code,
         status: quote.status,
-        statusLabel: QUOTE_STATUS_LABELS[quote.status],
+        statusLabel: label(quote.status),
         statusReason: quote.statusReason,
         customerName: quote.customerName,
         customerEmail: quote.customerEmail,
@@ -98,5 +118,11 @@ export function toQuoteDto(quote: Quote): QuoteDto {
         convertedOrderCode: quote.convertedOrderCode,
         createdAt: quote.createdAt.toISOString(),
         updatedAt: quote.updatedAt.toISOString(),
+        allowedTransitions: manualQuoteTransitions(quote.status).map((rule) => ({
+            status: rule.to,
+            label: label(rule.to),
+            requiresReason: rule.requiresReason === true,
+        })),
+        ...quoteCapabilities(quote),
     }
 }

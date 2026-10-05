@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from '@nestj
 import { InjectDataSource } from '@nestjs/typeorm'
 import { Brackets, DataSource, In } from 'typeorm'
 import { OrderStatusCatalogService } from '../catalogs/order-status-catalog.service.js'
+import { PaymentMethodCatalogService } from '../catalogs/payment-method-catalog.service.js'
 import type { AuthUser } from '../common/types/auth-user.js'
 import { addDays, startOfCaracasDay } from '../common/utils/caracas-date.js'
 import { ContentService } from '../content/content.service.js'
@@ -92,6 +93,7 @@ export class AdminOrdersService {
         @InjectDataSource() private readonly dataSource: DataSource,
         private readonly statuses: OrderStatusService,
         private readonly catalog: OrderStatusCatalogService,
+        private readonly methods: PaymentMethodCatalogService,
         private readonly content: ContentService,
         private readonly rates: ExchangeRateService,
         private readonly orders: OrdersService,
@@ -268,7 +270,7 @@ export class AdminOrdersService {
             pendingPayment: count('PENDIENTE_PAGO'),
             pendingRefunds,
             paymentConfigured: configuredMethods(payment).length > 0,
-            paymentMethods: configuredMethods(payment),
+            paymentMethods: await this.methods.sort(configuredMethods(payment)),
             exchangeRate: {
                 available: current !== null && !current.isStale,
                 isStale: current?.isStale ?? false,
@@ -294,7 +296,11 @@ export class AdminOrdersService {
         const stockConflict = order.stockConflict
             ? await readLiveStockConflict(this.dataSource.manager, order.stockConflict)
             : null
-        return toAdminOrder(order, rules, await this.catalog.labeler(), stockConflict)
+        const [label, methodLabel] = await Promise.all([
+            this.catalog.labeler(),
+            this.methods.labeler(),
+        ])
+        return toAdminOrder(order, rules, label, methodLabel, stockConflict)
     }
 
     async transition(

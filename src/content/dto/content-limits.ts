@@ -1,3 +1,5 @@
+import { QUOTE_LIMITS } from '../../quotes/dto/field-names.js'
+
 /**
  * Lengths, list sizes and formats of the editable content. Mirrored by the admin forms in
  * frontend-galpa/src/views/admin/content/schema/content.schema.ts.
@@ -32,7 +34,12 @@ export const CONTENT_LIMITS = {
     testimonialQuote: 400,
     testimonialName: 60,
     testimonialProduct: 80,
+    /** Default terms of a new quote: same limit as the quote's own terms. */
+    quoteTerms: QUOTE_LIMITS.terms,
 } as const
+
+/** Days a new quote stays valid by default (whole days). */
+export const QUOTE_VALIDITY_DAYS = { min: 1, max: 90 } as const
 
 export const CONTENT_LIST_SIZES = {
     heroFeatures: { minItems: 0, maxItems: 4 },

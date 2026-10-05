@@ -1,9 +1,12 @@
 import { PasswordResetCode } from '../auth/entities/password-reset-code.entity.js'
 import { User } from '../auth/entities/user.entity.js'
 import { Bank } from '../catalogs/entities/bank.entity.js'
+import { ContactTopicOption, SpaceTypeOption } from '../catalogs/entities/contact-option.entity.js'
 import { MobilePrefix } from '../catalogs/entities/mobile-prefix.entity.js'
 import { OrderStatusDefinition } from '../catalogs/entities/order-status-definition.entity.js'
 import { OrderStatusGroup } from '../catalogs/entities/order-status-group.entity.js'
+import { PaymentMethodDefinition } from '../catalogs/entities/payment-method-definition.entity.js'
+import { QuoteStatusDefinition } from '../catalogs/entities/quote-status-definition.entity.js'
 import { Category } from '../categories/entities/category.entity.js'
 import { SiteContentEntry } from '../content/entities/site-content.entity.js'
 import { ExchangeRate } from '../exchange-rate/entities/exchange-rate.entity.js'
@@ -43,8 +46,12 @@ export const ENTITIES = [
     QuoteAccessLink,
     OrderStatusGroup,
     OrderStatusDefinition,
+    QuoteStatusDefinition,
+    PaymentMethodDefinition,
     Bank,
     MobilePrefix,
+    ContactTopicOption,
+    SpaceTypeOption,
     TelegramChat,
     TelegramLinkCode,
     TelegramMessage,

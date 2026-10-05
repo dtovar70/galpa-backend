@@ -33,7 +33,7 @@ const DATA: PaymentMessageData = {
     exchangeRate: 854.4637,
     stockConflict: null,
     payment: {
-        method: 'PAGO_MOVIL',
+        methodLabel: 'Pago Móvil',
         currency: 'VES',
         reference: '00123456',
         payerBankCode: '0102',
@@ -120,7 +120,7 @@ describe('telegram-format', () => {
             ...DATA,
             payment: {
                 ...DATA.payment,
-                method: 'ZELLE',
+                methodLabel: 'Zelle',
                 currency: 'USD',
                 reference: 'ZL12AB',
                 payerBankCode: null,
@@ -149,7 +149,7 @@ describe('telegram-format', () => {
             totalBs: 98856.77,
             itemCount: 1,
             items: DATA.items.slice(0, 1),
-            paymentMethod: 'TRANSFERENCIA',
+            paymentMethodLabel: 'Transferencia bancaria',
             wantsInstallation: true,
             paymentDueAt: new Date('2026-09-26T15:05:00Z'),
         })
@@ -169,7 +169,7 @@ describe('telegram-format', () => {
             createdAt: new Date('2026-09-25T15:05:00Z'),
             deliveryMethod: 'pickup',
             latestPayment: {
-                method: 'BINANCE',
+                methodLabel: 'Binance Pay',
                 reference: '123456789',
                 amount: 640,
                 currency: 'USD',
@@ -289,8 +289,10 @@ describe('contactMessage', () => {
         fullName: 'Ana & <Co>',
         email: 'ana@example.com',
         phone: '0414-1234567',
-        topic: 'COTIZACION' as const,
+        topic: 'COTIZACION',
+        topicLabel: 'Necesito una cotización',
         spaceType: null,
+        spaceTypeLabel: null,
         areaM2: null,
         product: null,
         message: 'Hola <b>equipo</b> & amigos',
@@ -304,7 +306,7 @@ describe('contactMessage', () => {
             '👤 Ana &amp; &lt;Co&gt;',
             '✉️ ana@example.com',
             '📱 WhatsApp: 0414-1234567',
-            '🏷️ Solicitud de cotización',
+            '🏷️ Necesito una cotización',
         ])
         expect(text).toContain('🗓️ 25/09/2026')
         expect(text.endsWith('Hola &lt;b&gt;equipo&lt;/b&gt; &amp; amigos')).toBe(true)
@@ -314,7 +316,9 @@ describe('contactMessage', () => {
         const text = contactMessage({
             ...EVENT,
             topic: 'ASESORIA',
+            topicLabel: 'Quiero asesoría para elegir un equipo',
             spaceType: 'COMERCIAL',
+            spaceTypeLabel: 'Comercial',
             areaM2: 45,
             product: {
                 slug: 'piso-techo-gree-36000-btu',
@@ -323,7 +327,7 @@ describe('contactMessage', () => {
             },
         })
         expect(text.split('\n')[0]).toBe('📨 <b>Nueva solicitud de asesoría</b>')
-        expect(text).toContain('🏷️ Asesoría para elegir un equipo')
+        expect(text).toContain('🏷️ Quiero asesoría para elegir un equipo')
         expect(text).toContain('🏠 Espacio: Comercial · 45 m²')
         expect(text).toContain(
             '❄️ Producto: <a href="https://galpa.com.ve/producto/piso-techo-gree-36000-btu">Piso-techo &lt;Gree&gt;</a>',

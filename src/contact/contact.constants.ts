@@ -1,29 +1,6 @@
 import { masculine } from '../common/validation/messages.js'
 import { TEXT_INPUT_MAX_LENGTH } from '../common/validation/text-limits.js'
 
-/**
- * Topics of the contact / advisory form, with the labels the storefront shows. Mirrored by
- * frontend-galpa/src/views/contact/schema/contact.schema.ts.
- */
-export const CONTACT_TOPICS = ['ASESORIA', 'COTIZACION', 'SOPORTE', 'OTRO'] as const
-export type ContactTopic = (typeof CONTACT_TOPICS)[number]
-
-export const CONTACT_TOPIC_LABELS: Record<ContactTopic, string> = {
-    ASESORIA: 'Asesoría para elegir un equipo',
-    COTIZACION: 'Solicitud de cotización',
-    SOPORTE: 'Soporte o garantía',
-    OTRO: 'Otro tema',
-}
-
-/** The kind of space to climatize (advisory requests). */
-export const SPACE_TYPES = ['RESIDENCIAL', 'COMERCIAL'] as const
-export type SpaceType = (typeof SPACE_TYPES)[number]
-
-export const SPACE_TYPE_LABELS: Record<SpaceType, string> = {
-    RESIDENCIAL: 'Residencial',
-    COMERCIAL: 'Comercial',
-}
-
 export const CONTACT_LIMITS = {
     fullName: { min: 3, max: TEXT_INPUT_MAX_LENGTH },
     email: TEXT_INPUT_MAX_LENGTH,

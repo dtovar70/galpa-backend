@@ -1,10 +1,13 @@
+import { prettifyStatusCode } from '../catalogs/order-status-catalog.service.js'
 import {
     canTransitionQuote,
     CONVERTIBLE_QUOTE_STATUSES,
     EDITABLE_QUOTE_STATUSES,
     invalidQuoteTransitionMessage,
+    manualQuoteTransitions,
     QUOTE_STATUSES,
     QUOTE_TRANSITIONS,
+    quoteCapabilities,
 } from './quote-status.js'
 
 describe('quote transition map', () => {
@@ -39,8 +42,49 @@ describe('quote transition map', () => {
         expect(CONVERTIBLE_QUOTE_STATUSES).toEqual(['BORRADOR', 'ENVIADA', 'ACEPTADA'])
     })
 
-    it('explains an invalid move in Spanish', () => {
-        expect(invalidQuoteTransitionMessage('BORRADOR', 'ACEPTADA')).toBe(
+    it('lists only the moves an admin may make by hand', () => {
+        const targets = (from: (typeof QUOTE_STATUSES)[number]) =>
+            manualQuoteTransitions(from).map((rule) => rule.to)
+        expect(targets('BORRADOR')).toEqual(['ENVIADA'])
+        expect(targets('ENVIADA')).toEqual(['ACEPTADA', 'RECHAZADA'])
+        expect(targets('ACEPTADA')).toEqual(['RECHAZADA'])
+        expect(targets('VENCIDA')).toEqual(['BORRADOR'])
+        expect(targets('CONVERTIDA')).toEqual([])
+        expect(targets('RECHAZADA')).toEqual([])
+    })
+
+    it('derives what the admin may do from the status (and the email to send it)', () => {
+        const email = 'compras@losandes.com'
+        expect(quoteCapabilities({ status: 'BORRADOR', customerEmail: email })).toEqual({
+            canEdit: true,
+            canConvert: true,
+            canDelete: true,
+            canSend: true,
+        })
+        expect(quoteCapabilities({ status: 'ENVIADA', customerEmail: null })).toEqual({
+            canEdit: true,
+            canConvert: true,
+            canDelete: false,
+            canSend: false,
+        })
+        expect(quoteCapabilities({ status: 'ACEPTADA', customerEmail: email })).toEqual({
+            canEdit: false,
+            canConvert: true,
+            canDelete: false,
+            canSend: false,
+        })
+        for (const status of ['CONVERTIDA', 'RECHAZADA', 'VENCIDA'] as const) {
+            expect(quoteCapabilities({ status, customerEmail: email })).toEqual({
+                canEdit: false,
+                canConvert: false,
+                canDelete: false,
+                canSend: false,
+            })
+        }
+    })
+
+    it('explains an invalid move in Spanish, with the catalog labels', () => {
+        expect(invalidQuoteTransitionMessage('BORRADOR', 'ACEPTADA', prettifyStatusCode)).toBe(
             'No se puede pasar una cotización de «Borrador» a «Aceptada».',
         )
     })

@@ -4,6 +4,7 @@ import {
     ArrayMaxSize,
     ArrayMinSize,
     IsArray,
+    IsInt,
     IsNotEmpty,
     IsNumber,
     IsString,
@@ -179,5 +180,17 @@ export function ContentMoney(field: FieldName): PropertyDecorator {
         ),
         Min(0, { message: msg.notNegative(field) }),
         Max(CONTENT_MAX_MONEY, { message: msg.max(field, CONTENT_MAX_MONEY) }),
+    )
+}
+
+/** A whole number between `range.min` and `range.max`. */
+export function ContentInteger(
+    field: FieldName,
+    range: { min: number; max: number },
+): PropertyDecorator {
+    return applyDecorators(
+        IsInt({ message: msg.integer(field) }),
+        Min(range.min, { message: msg.min(field, range.min) }),
+        Max(range.max, { message: msg.max(field, range.max) }),
     )
 }

@@ -1,7 +1,6 @@
 import { Transform, Type, type TransformFnParams } from 'class-transformer'
 import {
     IsEmail,
-    IsIn,
     IsInt,
     IsOptional,
     IsString,
@@ -16,14 +15,9 @@ import { SLUG_PATTERN } from '../../common/utils/text.util.js'
 import { msg } from '../../common/validation/messages.js'
 import { MaxInputLength } from '../../common/validation/text-limits.js'
 import { VE_MOBILE_PATTERN } from '../../common/validation/ve-formats.js'
-import {
-    CONTACT_FIELD as FIELD,
-    CONTACT_LIMITS as LIMITS,
-    CONTACT_TOPICS,
-    SPACE_TYPES,
-    type ContactTopic,
-    type SpaceType,
-} from '../contact.constants.js'
+import { CONTACT_OPTION_CODE_PATTERN } from '../../catalogs/contact-options.service.js'
+import { CONTACT_OPTION_CODE_MAX_LENGTH } from '../../catalogs/dto/field-names.js'
+import { CONTACT_FIELD as FIELD, CONTACT_LIMITS as LIMITS } from '../contact.constants.js'
 
 const trim = ({ value }: TransformFnParams): unknown =>
     typeof value === 'string' ? value.trim() : value
@@ -75,12 +69,19 @@ export class ContactMessageDto {
     })
     phone?: string
 
-    @IsIn(CONTACT_TOPICS, { message: msg.invalid(FIELD.topic) })
-    topic: ContactTopic
+    /** Code of an active topic (`GET /catalogs/contact-options`); checked by the service. */
+    @IsString({ message: msg.invalid(FIELD.topic) })
+    @MaxLength(CONTACT_OPTION_CODE_MAX_LENGTH, { message: msg.invalid(FIELD.topic) })
+    @Matches(CONTACT_OPTION_CODE_PATTERN, { message: msg.invalid(FIELD.topic) })
+    topic: string
 
+    /** Code of an active space type; checked by the service. Empty means not sent. */
     @IsOptional()
-    @IsIn(SPACE_TYPES, { message: msg.invalid(FIELD.spaceType) })
-    spaceType?: SpaceType
+    @Transform(trimOrUndefined)
+    @IsString({ message: msg.invalid(FIELD.spaceType) })
+    @MaxLength(CONTACT_OPTION_CODE_MAX_LENGTH, { message: msg.invalid(FIELD.spaceType) })
+    @Matches(CONTACT_OPTION_CODE_PATTERN, { message: msg.invalid(FIELD.spaceType) })
+    spaceType?: string
 
     @IsOptional()
     @Type(() => Number)

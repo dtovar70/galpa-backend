@@ -12,6 +12,7 @@ import {
     type Relation,
 } from 'typeorm'
 import { User } from '../../auth/entities/user.entity.js'
+import { QuoteStatusDefinition } from '../../catalogs/entities/quote-status-definition.entity.js'
 import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
 import { Order } from '../../orders/entities/order.entity.js'
@@ -46,6 +47,18 @@ export class Quote {
 
     @Column({ type: 'text', default: 'BORRADOR' })
     status: QuoteStatus
+
+    /**
+     * The status's catalog row (label, tone). The foreign key keeps every quote on a known
+     * status; the CHECK above still pins the column to the codes the workflow knows.
+     */
+    @ManyToOne(() => QuoteStatusDefinition, {
+        onDelete: 'RESTRICT',
+        onUpdate: 'CASCADE',
+        nullable: false,
+    })
+    @JoinColumn({ name: 'status', foreignKeyConstraintName: 'quotes_status_fkey' })
+    statusDefinition: Relation<QuoteStatusDefinition>
 
     /** The reason given when the quote was rejected (or other status notes). */
     @Column({ name: 'status_reason', type: 'text', nullable: true })

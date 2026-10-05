@@ -13,6 +13,7 @@ import { TEXT_INPUT_MAX_LENGTH } from '../../common/validation/text-limits.js'
 import { ORDER_LIMITS } from '../dto/field-names.js'
 import { User } from '../../auth/entities/user.entity.js'
 import { Bank } from '../../catalogs/entities/bank.entity.js'
+import { PaymentMethodDefinition } from '../../catalogs/entities/payment-method-definition.entity.js'
 import { PAYMENT_METHODS, type PaymentMethod } from '../../common/payment-methods.js'
 import { decimalTransformer } from '../../database/decimal.transformer.js'
 import { Order } from './order.entity.js'
@@ -65,6 +66,15 @@ export class OrderPayment {
 
     @Column({ type: 'text' })
     method: PaymentMethod
+
+    /** The method's catalog row (name, icon). The foreign key keeps every payment on a known method. */
+    @ManyToOne(() => PaymentMethodDefinition, {
+        onDelete: 'RESTRICT',
+        onUpdate: 'CASCADE',
+        nullable: false,
+    })
+    @JoinColumn({ name: 'method', foreignKeyConstraintName: 'order_payments_method_fkey' })
+    methodDefinition: Relation<PaymentMethodDefinition>
 
     /**
      * Bank reference (digits) for Pago Móvil and transfers; Zelle confirmation or Binance order

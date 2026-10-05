@@ -5,6 +5,7 @@ import { ContactContentDto } from './contact.dto.js'
 import { GeneralContentDto } from './general.dto.js'
 import { HomeContentDto } from './home.dto.js'
 import { PaymentContentDto } from './payment.dto.js'
+import { QuotesContentDto } from './quotes.dto.js'
 import { ShippingContentDto } from './shipping.dto.js'
 
 /** The DTO that validates each section on `PUT /admin/content/:section`. */
@@ -16,4 +17,5 @@ export const CONTENT_SECTION_DTOS = {
     contactPage: ContactPageContentDto,
     shipping: ShippingContentDto,
     payment: PaymentContentDto,
+    quotes: QuotesContentDto,
 } as const satisfies Record<ContentSection, new () => object>

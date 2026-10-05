@@ -19,10 +19,10 @@ import {
     type AdminContentDto,
     type AdminContentSectionDto,
 } from './content.service.js'
-import type { SiteContent } from './content.types.js'
+import type { PublicSiteContent } from './content.types.js'
 
 /**
- * Public site content. `no-cache` lets browsers keep a copy but revalidate it on every load;
+ * Public site content (admin-only sections are left out). `no-cache` lets browsers keep a copy but revalidate it on every load;
  * Express adds a weak ETag, so an unchanged payload costs a 304. Edits show up immediately.
  */
 @Public()
@@ -32,7 +32,7 @@ export class ContentController {
 
     @Get()
     @Header('Cache-Control', 'no-cache')
-    getAll(): Promise<SiteContent> {
+    getAll(): Promise<PublicSiteContent> {
         return this.content.getAll()
     }
 }

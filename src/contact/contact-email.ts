@@ -1,7 +1,6 @@
 import { formatCaracasDateTime } from '../common/utils/caracas-date.js'
 import type { ContactContent } from '../content/content.types.js'
 import { renderEmail, type EmailBlock } from '../mail/email-layout.js'
-import { CONTACT_TOPIC_LABELS, SPACE_TYPE_LABELS } from './contact.constants.js'
 import type { ContactMessageReceivedEvent } from './contact.events.js'
 
 /** "Nuevo mensaje de contacto" for the store's inbox (the customer is the reply-to). */
@@ -13,9 +12,9 @@ export function contactInboxEmail(
         { label: 'Nombre', value: event.fullName },
         { label: 'Correo', value: event.email },
         ...(event.phone ? [{ label: 'WhatsApp', value: event.phone }] : []),
-        { label: 'Tema', value: CONTACT_TOPIC_LABELS[event.topic] },
-        ...(event.spaceType
-            ? [{ label: 'Tipo de espacio', value: SPACE_TYPE_LABELS[event.spaceType] }]
+        { label: 'Tema', value: event.topicLabel },
+        ...(event.spaceTypeLabel
+            ? [{ label: 'Tipo de espacio', value: event.spaceTypeLabel }]
             : []),
         ...(event.areaM2 !== null ? [{ label: 'Área', value: `${event.areaM2} m²` }] : []),
         ...(event.product ? [{ label: 'Producto', value: event.product.name }] : []),
@@ -33,11 +32,11 @@ export function contactInboxEmail(
     const rendered = renderEmail({
         brandName: shop.brandName,
         contact: shop.contact,
-        preheader: `${CONTACT_TOPIC_LABELS[event.topic]} · ${event.fullName}`,
+        preheader: `${event.topicLabel} · ${event.fullName}`,
         blocks,
     })
     return {
-        subject: `Nuevo mensaje: ${CONTACT_TOPIC_LABELS[event.topic]} · ${event.fullName}`,
+        subject: `Nuevo mensaje: ${event.topicLabel} · ${event.fullName}`,
         ...rendered,
     }
 }

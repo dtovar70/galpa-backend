@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
+import { PaymentMethodCatalogService } from '../../catalogs/payment-method-catalog.service.js'
 import { ContentService } from '../../content/content.service.js'
 import { MailService } from '../../mail/mail.service.js'
 import { Order } from '../entities/order.entity.js'
@@ -24,6 +25,7 @@ export class OrderEmailsService {
     constructor(
         @InjectDataSource() private readonly dataSource: DataSource,
         private readonly content: ContentService,
+        private readonly methods: PaymentMethodCatalogService,
         private readonly access: OrderAccessService,
         private readonly mail: MailService,
     ) {}
@@ -42,10 +44,17 @@ export class OrderEmailsService {
             this.logger.warn(`Order ${orderId} not found; no "order received" email`)
             return false
         }
-        const content = await this.content.getAll()
+        const [content, methodLabel] = await Promise.all([
+            this.content.getAll(),
+            this.methods.labeler(),
+        ])
         const link = await this.access.issue(order.id, order.code, null)
         const email = orderReceivedEmail(
-            { ...order, items: order.items ?? [] },
+            {
+                ...order,
+                paymentMethodLabel: methodLabel(order.paymentMethod),
+                items: order.items ?? [],
+            },
             content.payment,
             link.url,
             { brandName: content.general.brandName, contact: content.contact },
